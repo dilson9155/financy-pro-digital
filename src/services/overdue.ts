@@ -2,7 +2,6 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { D, isGreaterThan, round2 } from "@/lib/money";
 
-export type OverdueDirection = "ALL" | "RECEIVABLE" | "PAYABLE";
 export type OverdueBucket = "0-30" | "31-60" | "61-90" | "90+";
 
 export interface OverdueItem {
@@ -28,10 +27,19 @@ export interface OverdueBucketSummary {
   amount: string;
 }
 
+export interface OverdueDirectionSummary {
+  count: number;
+  amount: string;
+}
+
 export interface OverdueSummary {
   totalCount: number;
   totalAmount: string;
   byBucket: OverdueBucketSummary[];
+  byDirection: {
+    PAYABLE: OverdueDirectionSummary;
+    RECEIVABLE: OverdueDirectionSummary;
+  };
 }
 
 export interface OverdueScanResult {
@@ -62,15 +70,15 @@ const BUCKET_LABELS: Record<OverdueBucket, string> = {
 
 /**
  * Faz a varredura dos titulos em aberto/parcial com vencimento anterior a hoje
- * (escopo da empresa ativa) e devolve a lista ordenada, o resumo por faixa
- * de atraso e o timestamp da varredura.
+ * (escopo da empresa ativa) — inclui **contas a pagar e a receber** — e devolve
+ * a lista ordenada, o resumo por faixa de atraso, o breakdown por direcao
+ * e o timestamp da varredura.
  *
  * O "vencido" e derivado (status permanece OPEN/PARTIAL; a classificacao
  * "vencido" vem do cruzamento status + data de vencimento).
  */
 export async function scanOverdueTitles(
   companyId: string,
-  direction: OverdueDirection = "ALL",
 ): Promise<OverdueScanResult> {
   const today = startOfToday();
 
@@ -79,9 +87,6 @@ export async function scanOverdueTitles(
     status: { in: ["OPEN", "PARTIAL"] },
     dueDate: { lt: today },
   };
-  if (direction === "RECEIVABLE" || direction === "PAYABLE") {
-    where.direction = direction;
-  }
 
   const rows = await prisma.financialTitle.findMany({
     where,
@@ -105,6 +110,8 @@ export async function scanOverdueTitles(
     "61-90": D(0),
     "90+": D(0),
   };
+  const dirCounts = { PAYABLE: 0, RECEIVABLE: 0 };
+  const dirAmounts = { PAYABLE: D(0), RECEIVABLE: D(0) };
   let totalAmount = D(0);
 
   for (const t of rows) {
@@ -118,6 +125,7 @@ export async function scanOverdueTitles(
       ),
     );
     const bucket = bucketOf(days);
+    const dir = t.direction === "PAYABLE" ? "PAYABLE" : "RECEIVABLE";
 
     items.push({
       id: t.id,
@@ -137,6 +145,8 @@ export async function scanOverdueTitles(
 
     counts[bucket] += 1;
     amounts[bucket] = round2(amounts[bucket].plus(open));
+    dirCounts[dir] += 1;
+    dirAmounts[dir] = round2(dirAmounts[dir].plus(open));
     totalAmount = round2(totalAmount.plus(open));
   }
 
@@ -149,6 +159,16 @@ export async function scanOverdueTitles(
       count: counts[key],
       amount: amounts[key].toFixed(2),
     })),
+    byDirection: {
+      PAYABLE: {
+        count: dirCounts.PAYABLE,
+        amount: dirAmounts.PAYABLE.toFixed(2),
+      },
+      RECEIVABLE: {
+        count: dirCounts.RECEIVABLE,
+        amount: dirAmounts.RECEIVABLE.toFixed(2),
+      },
+    },
   };
 
   return {

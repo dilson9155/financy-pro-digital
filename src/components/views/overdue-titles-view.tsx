@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useApiQuery } from "@/lib/hooks";
-import { buildQuery } from "@/lib/client";
 import { useToast } from "@/components/toast";
 import {
   Badge,
@@ -11,9 +10,7 @@ import {
   Card,
   CardContent,
   EmptyState,
-  Field,
   PageHeader,
-  Select,
   Spinner,
   StatCard,
 } from "@/components/ui";
@@ -23,8 +20,6 @@ import {
   TITLE_STATUS_LABELS,
 } from "@/lib/format";
 import { RefreshCw } from "lucide-react";
-
-type Direction = "ALL" | "RECEIVABLE" | "PAYABLE";
 
 interface OverdueItem {
   id: string;
@@ -49,10 +44,19 @@ interface BucketSummary {
   amount: string;
 }
 
+interface DirectionSummary {
+  count: number;
+  amount: string;
+}
+
 interface Summary {
   totalCount: number;
   totalAmount: string;
   byBucket: BucketSummary[];
+  byDirection: {
+    PAYABLE: DirectionSummary;
+    RECEIVABLE: DirectionSummary;
+  };
 }
 
 interface ScanResponse {
@@ -75,19 +79,13 @@ const BUCKET_BADGE_TONES: Record<OverdueItem["bucket"], "blue" | "yellow" | "red
   "90+": "purple",
 };
 
-const DIRECTION_LABEL: Record<Direction, string> = {
-  ALL: "Todos",
-  RECEIVABLE: "A receber",
-  PAYABLE: "A pagar",
-};
-
 export function OverdueTitlesView() {
   const { notify } = useToast();
-  const [direction, setDirection] = useState<Direction>("ALL");
   const [scanning, setScanning] = useState(false);
 
-  const url = `/api/titles/overdue${buildQuery({ direction })}`;
-  const { data, loading, error, reload } = useApiQuery<ScanResponse>(url);
+  const { data, loading, error, reload } = useApiQuery<ScanResponse>(
+    "/api/titles/overdue",
+  );
 
   async function runScan() {
     setScanning(true);
@@ -121,23 +119,10 @@ export function OverdueTitlesView() {
         }
       />
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-        <div className="w-full sm:max-w-xs">
-          <Field label="Direção">
-            <Select
-              value={direction}
-              onChange={(e) => setDirection(e.target.value as Direction)}
-            >
-              <option value="ALL">Todos</option>
-              <option value="RECEIVABLE">A receber</option>
-              <option value="PAYABLE">A pagar</option>
-            </Select>
-          </Field>
-        </div>
-        <p className="text-xs text-muted-foreground sm:pb-2">
-          Mostra apenas títulos não liquidados cujo vencimento é anterior a hoje.
-        </p>
-      </div>
+      <p className="text-xs text-muted-foreground">
+        Inclui contas a pagar e a receber. Mostra apenas títulos não
+        liquidados cujo vencimento é anterior a hoje.
+      </p>
 
       {loading && !data ? (
         <div className="flex justify-center py-16">
@@ -156,15 +141,11 @@ export function OverdueTitlesView() {
       ) : !data || data.items.length === 0 ? (
         <EmptyState
           title="Nenhum título vencido"
-          description={
-            direction === "ALL"
-              ? "Ótima notícia: não há títulos em aberto com vencimento anterior a hoje."
-              : `Não há títulos ${DIRECTION_LABEL[direction].toLowerCase()} vencidos no momento.`
-          }
+          description="Ótima notícia: não há títulos em aberto (pagar ou receber) com vencimento anterior a hoje."
         />
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <StatCard
               label="Total vencido"
               value={formatCurrency(data.summary.totalAmount)}
@@ -172,26 +153,15 @@ export function OverdueTitlesView() {
               tone="destructive"
             />
             <StatCard
-              label="Faixa mais crítica"
-              value={
-                data.summary.byBucket
-                  .slice()
-                  .reverse()
-                  .find((b) => b.count > 0)?.label ?? "—"
-              }
-              hint={
-                data.summary.byBucket
-                  .slice()
-                  .reverse()
-                  .find((b) => b.count > 0)
-                  ? `${formatCurrency(
-                      data.summary.byBucket
-                        .slice()
-                        .reverse()
-                        .find((b) => b.count > 0)!.amount,
-                    )} acumulados`
-                  : "Sem títulos em faixas críticas"
-              }
+              label="A receber (vencido)"
+              value={formatCurrency(data.summary.byDirection.RECEIVABLE.amount)}
+              hint={`${data.summary.byDirection.RECEIVABLE.count} título(s) — clientes que devem`}
+              tone="primary"
+            />
+            <StatCard
+              label="A pagar (vencido)"
+              value={formatCurrency(data.summary.byDirection.PAYABLE.amount)}
+              hint={`${data.summary.byDirection.PAYABLE.count} título(s) — fornecedores a pagar`}
               tone="warning"
             />
           </div>
