@@ -607,6 +607,7 @@ export function AdminInvoicesView() {
           sendInvoice?.company.billingEmail ?? sendInvoice?.company.email
         }
         contactPhone={sendInvoice?.company.phone}
+        invoiceId={sendInvoice?.id}
         invoice={
           sendInvoice
             ? {

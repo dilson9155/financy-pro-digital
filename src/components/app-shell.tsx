@@ -28,6 +28,7 @@ import {
 import { cn } from "./ui";
 import { Avatar } from "./ui";
 import { BrandSidebar } from "./brand";
+import { NotificationBell } from "./notification-bell";
 import { api } from "@/lib/client";
 import {
   SessionProvider,
@@ -44,6 +45,8 @@ interface NavItem {
   permission: string;
   /** So aparece para super-admins da plataforma. */
   superAdminOnly?: boolean;
+  /** Aparece para todos os usuarios, sem exigir permissao. */
+  alwaysShow?: boolean;
 }
 
 const NAV: { group: string; items: NavItem[] }[] = [
@@ -55,6 +58,13 @@ const NAV: { group: string; items: NavItem[] }[] = [
         label: "Dashboard",
         icon: LayoutDashboard,
         permission: "dashboard.view",
+      },
+      {
+        href: "/minhas-cobrancas",
+        label: "Minhas cobranças",
+        icon: Receipt,
+        permission: "",
+        alwaysShow: true,
       },
     ],
   },
@@ -223,7 +233,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         {NAV.map((group) => {
           const items = group.items.filter(
             (i) =>
-              can(i.permission) &&
+              (i.alwaysShow || can(i.permission)) &&
               (!i.superAdminOnly || session.user.isSuperAdmin),
           );
           if (items.length === 0) return null;
@@ -318,6 +328,7 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
         </div>
       </div>
       <div className="flex items-center gap-3">
+        <NotificationBell />
         <div className="hidden text-right sm:block">
           <p className="text-sm font-medium leading-tight">{session.user.name}</p>
           <p className="text-xs text-muted-foreground">

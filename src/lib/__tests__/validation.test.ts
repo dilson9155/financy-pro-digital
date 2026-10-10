@@ -15,6 +15,7 @@ import {
   invoiceCreateSchema,
   invoiceUpdateSchema,
   platformBillingSchema,
+  notificationReadSchema,
   updateTransactionSchema,
 } from "@/lib/validation";
 
@@ -518,6 +519,24 @@ describe("validation - edicao de lancamento", () => {
   it("rejeita conta com id invalido", () => {
     expect(
       updateTransactionSchema.safeParse({ bankAccountId: "nao-uuid" }).success,
+    ).toBe(false);
+  });
+});
+
+describe("validation - notificacoes", () => {
+  it("aceita marcar todas como lidas", () => {
+    expect(notificationReadSchema.safeParse({ all: true }).success).toBe(true);
+    expect(notificationReadSchema.safeParse({}).success).toBe(true);
+  });
+
+  it("aceita uma lista de ids validos", () => {
+    const r = notificationReadSchema.safeParse({ ids: [UUID] });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejeita ids invalidos", () => {
+    expect(
+      notificationReadSchema.safeParse({ ids: ["nao-uuid"] }).success,
     ).toBe(false);
   });
 });

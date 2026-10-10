@@ -385,3 +385,9 @@ export const platformBillingSchema = z.object({
   defaultAmount: money.optional(),
   defaultDueDays: z.coerce.number().int().min(0).max(365).optional(),
 });
+
+/** Marcar notificacoes como lidas (por ids ou todas). */
+export const notificationReadSchema = z.object({
+  ids: z.array(uuid).max(200).optional(),
+  all: z.boolean().optional(),
+});

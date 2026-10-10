@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "./modal";
-import { Button, buttonClasses, Field, Textarea } from "./ui";
+import { Button, buttonClasses, Field, Spinner, Textarea } from "./ui";
 import { useToast } from "./toast";
+import { api } from "@/lib/client";
 import {
   billingSubject,
   buildBillingMessage,
@@ -21,7 +22,9 @@ export function BillingMessageModal({
   contactEmail,
   contactPhone,
   invoice,
+  invoiceId,
   settings,
+  onNotified,
 }: {
   open: boolean;
   onClose: () => void;
@@ -29,10 +32,14 @@ export function BillingMessageModal({
   contactEmail?: string | null;
   contactPhone?: string | null;
   invoice: BillingInvoiceInfo | null;
+  /** Se informado, permite enviar a cobranca para as notificacoes do sistema. */
+  invoiceId?: string | null;
   settings: BillingSettingsInfo;
+  onNotified?: () => void;
 }) {
   const { notify } = useToast();
   const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
 
   const baseMessage = useMemo(
     () =>
@@ -62,6 +69,24 @@ export function BillingMessageModal({
     }
   }
 
+  async function sendToSystem() {
+    if (!invoiceId) return;
+    setSending(true);
+    try {
+      await api.post(`/api/admin/invoices/${invoiceId}/notify`, { message });
+      notify("Cobrança enviada para as notificações da empresa.", "success");
+      onNotified?.();
+      onClose();
+    } catch (err) {
+      notify(
+        err instanceof Error ? err.message : "Não foi possível enviar.",
+        "error",
+      );
+    } finally {
+      setSending(false);
+    }
+  }
+
   return (
     <Modal
       open={open}
@@ -88,6 +113,11 @@ export function BillingMessageModal({
         </Field>
 
         <div className="flex flex-wrap gap-2">
+          {invoiceId ? (
+            <Button onClick={sendToSystem} disabled={sending}>
+              {sending ? <Spinner /> : null} Enviar no sistema
+            </Button>
+          ) : null}
           {mail ? (
             <a className={buttonClasses("primary", "md")} href={mail}>
               Enviar por e-mail

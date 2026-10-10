@@ -911,6 +911,7 @@ export function AdminCompanyDetailView({ companyId }: { companyId: string }) {
         companyName={data.name}
         contactEmail={data.billingEmail ?? data.email}
         contactPhone={data.phone}
+        invoiceId={sendInvoice?.id}
         invoice={
           sendInvoice
             ? {
