@@ -26,18 +26,26 @@ import { ChevronRight, RefreshCw } from "lucide-react";
 
 type Direction = "ALL" | "RECEIVABLE" | "PAYABLE";
 
+interface OverdueInstallment {
+  id: string;
+  number: number;
+  dueDate: string;
+  remaining: string;
+  daysOverdue: number;
+}
+
 interface OverdueItem {
   id: string;
   direction: string;
   description: string;
   documentNumber: string | null;
-  dueDate: string;
+  openAmount: string;
+  totalAmount: string;
+  status: string;
   daysOverdue: number;
   bucket: "0-30" | "31-60" | "61-90" | "90+";
-  totalAmount: string;
-  settledAmount: string;
-  openAmount: string;
-  status: string;
+  dueDate: string;
+  overdueInstallments: OverdueInstallment[];
   partner: { id: string; name: string; document: string | null } | null;
   category: { id: string; name: string } | null;
 }
@@ -237,9 +245,25 @@ export function OverdueTitlesView() {
                           {item.partner ? (
                             <>{item.partner.name} · </>
                           ) : null}
-                          Venceu em {formatDate(item.dueDate)}
                           {item.documentNumber
-                            ? ` · Doc ${item.documentNumber}`
+                            ? `Doc ${item.documentNumber} · `
+                            : ""}
+                          {item.overdueInstallments.length} parcela(s) vencida(s)
+                          {item.status === "PARTIAL"
+                            ? ` · ${TITLE_STATUS_LABELS.PARTIAL}`
+                            : ""}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Mais antiga: {formatDate(item.dueDate)} (
+                          {item.daysOverdue} dia(s))
+                          {item.overdueInstallments.length > 1
+                            ? ` · demais: ${item.overdueInstallments
+                                .slice(1)
+                                .map(
+                                  (i) =>
+                                    `#${i.number} em ${formatDate(i.dueDate)} (${i.daysOverdue}d)`,
+                                )
+                                .join(", ")}`
                             : ""}
                         </p>
                       </div>
@@ -249,7 +273,8 @@ export function OverdueTitlesView() {
                             {formatCurrency(item.openAmount)}
                           </p>
                           <p className="text-[11px] text-muted-foreground">
-                            restante de {formatCurrency(item.totalAmount)}
+                            {item.overdueInstallments.length} parcela(s) ·
+                            título {formatCurrency(item.totalAmount)}
                           </p>
                         </div>
                         <Badge tone={BUCKET_BADGE_TONES[item.bucket]}>

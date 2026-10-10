@@ -5,18 +5,29 @@ import { D, isGreaterThan, round2 } from "@/lib/money";
 export type OverdueDirection = "ALL" | "RECEIVABLE" | "PAYABLE";
 export type OverdueBucket = "0-30" | "31-60" | "61-90" | "90+";
 
+export interface OverdueInstallment {
+  id: string;
+  number: number;
+  dueDate: string;
+  remaining: string;
+  daysOverdue: number;
+}
+
 export interface OverdueItem {
   id: string;
   direction: string;
   description: string;
   documentNumber: string | null;
-  dueDate: string;
+  /** Soma do saldo em aberto das parcelas vencidas (e nao baixadas). */
+  openAmount: string;
+  totalAmount: string;
+  status: string;
+  /** Maior atraso entre as parcelas vencidas (a mais antiga). */
   daysOverdue: number;
   bucket: OverdueBucket;
-  totalAmount: string;
-  settledAmount: string;
-  openAmount: string;
-  status: string;
+  /** Data de vencimento da parcela mais antiga ainda em atraso. */
+  dueDate: string;
+  overdueInstallments: OverdueInstallment[];
   partner: { id: string; name: string; document: string | null } | null;
   category: { id: string; name: string } | null;
 }
@@ -70,15 +81,16 @@ const BUCKET_LABELS: Record<OverdueBucket, string> = {
 };
 
 /**
- * Faz a varredura dos titulos em aberto/parcial com vencimento anterior a hoje
- * (escopo da empresa ativa) — inclui **contas a pagar e a receber** — e devolve
- * a lista ordenada, o resumo por faixa de atraso, o breakdown por direcao
- * e o timestamp da varredura.
+ * Faz a varredura **por parcela**: entra em cada conta (titulo) e olha cada
+ * TitleInstallment, incluindo apenas as parcelas que venceram e nao foram
+ * totalmente baixadas. Os titulos sao agrupados (uma linha por titulo) com
+ * o total em aberto = soma dos saldos das parcelas vencidas, e a maior
+ * espera = dias da parcela mais antiga em atraso.
  *
  * Se `direction` for informado, filtra para "PAYABLE" ou "RECEIVABLE".
  *
- * O "vencido" e derivado (status permanece OPEN/PARTIAL; a classificacao
- * "vencido" vem do cruzamento status + data de vencimento).
+ * O "vencido" e derivado da parcela (status OPEN/PARTIAL + dueDate < hoje),
+ * nao da data do titulo.
  */
 export async function scanOverdueTitles(
   companyId: string,
@@ -86,25 +98,101 @@ export async function scanOverdueTitles(
 ): Promise<OverdueScanResult> {
   const today = startOfToday();
 
-  const where: Prisma.FinancialTitleWhereInput = {
+  const where: Prisma.TitleInstallmentWhereInput = {
     companyId,
     status: { in: ["OPEN", "PARTIAL"] },
     dueDate: { lt: today },
   };
   if (direction === "RECEIVABLE" || direction === "PAYABLE") {
-    where.direction = direction;
+    where.title = { direction };
   }
 
-  const rows = await prisma.financialTitle.findMany({
+  // 1) busca todas as parcelas vencidas e nao baixadas (com o titulo/pai)
+  const installments = await prisma.titleInstallment.findMany({
     where,
     orderBy: { dueDate: "asc" },
     include: {
-      partner: { select: { id: true, name: true, document: true } },
-      category: { select: { id: true, name: true } },
+      title: {
+        include: {
+          partner: { select: { id: true, name: true, document: true } },
+          category: { select: { id: true, name: true } },
+        },
+      },
     },
   });
 
-  const items: OverdueItem[] = [];
+  // 2) agrupa por titulo: soma saldos, maior atraso, parcela mais antiga
+  type Group = {
+    titleId: string;
+    title: (typeof installments)[number]["title"];
+    overdueInstallments: OverdueInstallment[];
+    totalOpen: ReturnType<typeof D>;
+    worstDays: number;
+    oldestDue: Date;
+  };
+
+  const groups = new Map<string, Group>();
+  for (const inst of installments) {
+    const remaining = round2(D(inst.amount).minus(inst.paidAmount));
+    if (!isGreaterThan(remaining, 0)) continue;
+
+    const days = Math.max(
+      0,
+      Math.floor(
+        (today.getTime() - new Date(inst.dueDate).getTime()) / 86_400_000,
+      ),
+    );
+
+    let g = groups.get(inst.titleId);
+    if (!g) {
+      g = {
+        titleId: inst.titleId,
+        title: inst.title,
+        overdueInstallments: [],
+        totalOpen: D(0),
+        worstDays: 0,
+        oldestDue: inst.dueDate,
+      };
+      groups.set(inst.titleId, g);
+    }
+    g.overdueInstallments.push({
+      id: inst.id,
+      number: inst.number,
+      dueDate: inst.dueDate.toISOString(),
+      remaining: remaining.toFixed(2),
+      daysOverdue: days,
+    });
+    g.totalOpen = round2(g.totalOpen.plus(remaining));
+    if (days > g.worstDays) g.worstDays = days;
+    if (inst.dueDate.getTime() < g.oldestDue.getTime()) g.oldestDue = inst.dueDate;
+  }
+
+  // 3) monta a lista (ordenada pela parcela mais antiga em atraso)
+  const items: OverdueItem[] = Array.from(groups.values())
+    .sort((a, b) => a.oldestDue.getTime() - b.oldestDue.getTime())
+    .map((g) => {
+      const open = g.totalOpen;
+      return {
+        id: g.titleId,
+        direction: g.title.direction,
+        description: g.title.description,
+        documentNumber: g.title.documentNumber,
+        openAmount: open.toFixed(2),
+        totalAmount: round2(g.title.totalAmount).toFixed(2),
+        status: g.title.status,
+        daysOverdue: g.worstDays,
+        bucket: bucketOf(g.worstDays),
+        dueDate: g.oldestDue.toISOString(),
+        overdueInstallments: g.overdueInstallments.sort(
+          (a, b) =>
+            new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
+        ),
+        partner: g.title.partner,
+        category: g.title.category,
+      };
+    });
+
+  // 4) agrega o resumo
   const counts: Record<OverdueBucket, number> = {
     "0-30": 0,
     "31-60": 0,
@@ -121,40 +209,13 @@ export async function scanOverdueTitles(
   const dirAmounts = { PAYABLE: D(0), RECEIVABLE: D(0) };
   let totalAmount = D(0);
 
-  for (const t of rows) {
-    const open = round2(D(t.totalAmount).minus(t.settledAmount));
-    if (!isGreaterThan(open, 0)) continue;
-
-    const days = Math.max(
-      0,
-      Math.floor(
-        (today.getTime() - new Date(t.dueDate).getTime()) / 86_400_000,
-      ),
-    );
-    const bucket = bucketOf(days);
-    const dir = t.direction === "PAYABLE" ? "PAYABLE" : "RECEIVABLE";
-
-    items.push({
-      id: t.id,
-      direction: t.direction,
-      description: t.description,
-      documentNumber: t.documentNumber,
-      dueDate: t.dueDate.toISOString(),
-      daysOverdue: days,
-      bucket,
-      totalAmount: round2(t.totalAmount).toFixed(2),
-      settledAmount: round2(t.settledAmount).toFixed(2),
-      openAmount: open.toFixed(2),
-      status: t.status,
-      partner: t.partner,
-      category: t.category,
-    });
-
-    counts[bucket] += 1;
-    amounts[bucket] = round2(amounts[bucket].plus(open));
+  for (const it of items) {
+    counts[it.bucket] += 1;
+    amounts[it.bucket] = round2(amounts[it.bucket].plus(it.openAmount));
+    const dir = it.direction === "PAYABLE" ? "PAYABLE" : "RECEIVABLE";
     dirCounts[dir] += 1;
-    dirAmounts[dir] = round2(dirAmounts[dir].plus(open));
-    totalAmount = round2(totalAmount.plus(open));
+    dirAmounts[dir] = round2(dirAmounts[dir].plus(it.openAmount));
+    totalAmount = round2(totalAmount.plus(it.openAmount));
   }
 
   const summary: OverdueSummary = {
