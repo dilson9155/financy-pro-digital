@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Card, CardContent, Field, Input, Spinner } from "@/components/ui";
+import { BrandAuthHeader } from "@/components/brand";
 import { api } from "@/lib/client";
 
 export default function RegisterPage() {
@@ -42,15 +43,10 @@ export default function RegisterPage() {
   return (
     <div className="grid min-h-screen place-items-center bg-gradient-to-br from-slate-100 to-slate-200 p-4">
       <div className="w-full max-w-lg">
-        <div className="mb-6 flex flex-col items-center gap-2">
-          <span className="grid h-12 w-12 place-items-center rounded-xl bg-primary text-xl font-bold text-primary-foreground">
-            F
-          </span>
-          <h1 className="text-xl font-bold">Criar conta</h1>
-          <p className="text-sm text-muted-foreground">
-            Cadastre seu usuário e sua empresa
-          </p>
-        </div>
+        <BrandAuthHeader
+          title="Criar conta"
+          subtitle="Cadastre seu usuário e sua empresa"
+        />
         <Card>
           <CardContent className="p-6">
             <form onSubmit={onSubmit} className="space-y-4">

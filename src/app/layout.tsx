@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
+import { BRAND } from "@/lib/branding";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Financy Pro Digital",
-  description:
-    "SaaS de gestão financeira empresarial: contas a pagar e receber, fluxo de caixa, conciliação e relatórios.",
+  title: BRAND.name,
+  description: BRAND.description,
 };
 
 export default function RootLayout({

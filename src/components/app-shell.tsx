@@ -26,6 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "./ui";
+import { BrandSidebar } from "./brand";
 import { api } from "@/lib/client";
 import {
   SessionProvider,
@@ -185,15 +186,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-16 items-center gap-2 border-b px-5">
-        <span className="grid h-8 w-8 place-items-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
-          F
-        </span>
-        <div className="leading-tight">
-          <p className="text-sm font-semibold">Financy Pro</p>
-          <p className="text-xs text-muted-foreground">Digital</p>
-        </div>
-      </div>
+      <BrandSidebar />
       <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
         {NAV.map((group) => {
           const items = group.items.filter((i) => can(i.permission));
