@@ -269,6 +269,51 @@ export function Badge({
   );
 }
 
+const avatarSizes = {
+  sm: "h-8 w-8 text-xs",
+  md: "h-10 w-10 text-sm",
+  lg: "h-14 w-14 text-lg",
+} as const;
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
+/** Foto do usuario com fallback em monograma (iniciais do nome). */
+export function Avatar({
+  name,
+  src,
+  size = "md",
+  className,
+}: {
+  name: string;
+  src?: string | null;
+  size?: keyof typeof avatarSizes;
+  className?: string;
+}) {
+  const base = cn(
+    "grid shrink-0 place-items-center overflow-hidden rounded-full bg-primary/10 font-semibold text-primary",
+    avatarSizes[size],
+    className,
+  );
+
+  if (src) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={src} alt={name} className={cn(base, "object-cover")} />
+    );
+  }
+
+  return (
+    <span aria-hidden="true" className={base}>
+      {initials(name)}
+    </span>
+  );
+}
+
 const STATUS_TONES: Record<string, BadgeTone> = {
   OPEN: "blue",
   PARTIAL: "yellow",
@@ -287,6 +332,7 @@ const STATUS_TONES: Record<string, BadgeTone> = {
   INACTIVE: "gray",
   LOCKED: "red",
   SUSPENDED: "yellow",
+  OVERDUE: "red",
   INVITED: "blue",
 };
 

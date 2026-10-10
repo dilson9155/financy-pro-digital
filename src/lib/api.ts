@@ -46,3 +46,16 @@ export async function requireApiAuth(
   }
   return ctx as CompanyAuthContext;
 }
+
+/**
+ * Autentica a requisicao exigindo que o usuario seja super-admin da plataforma.
+ * Nao exige empresa ativa (o painel e global).
+ */
+export async function requireSuperAdminApi(): Promise<AuthContext> {
+  const ctx = await getAuthContext();
+  if (!ctx) throw new AppError("Nao autenticado.", 401, "UNAUTHORIZED");
+  if (!ctx.user.isSuperAdmin) {
+    throw new AppError("Acesso negado.", 403, "FORBIDDEN");
+  }
+  return ctx;
+}

@@ -142,3 +142,61 @@ body {
     display: none !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Impressao: relatorios formatados em folha A4.
+--------------------------------------------------------------------------- */
+@page {
+  size: A4;
+  margin: 12mm;
+}
+
+@media print {
+  html,
+  body {
+    background: #fff;
+  }
+
+  /* A largura imprimivel do A4 (~703px) fica abaixo do breakpoint mobile,
+     entao forcamos as tabelas de volta ao formato tabular ao imprimir. */
+  .rt-table,
+  .rt-table thead,
+  .rt-table tbody,
+  .rt-table tr,
+  .rt-table th,
+  .rt-table td {
+    display: revert !important;
+  }
+
+  .rt-table {
+    display: table !important;
+    width: 100%;
+  }
+
+  .rt-table thead {
+    display: table-header-group !important;
+  }
+
+  .rt-table tbody {
+    display: table-row-group !important;
+  }
+
+  .rt-table tr {
+    display: table-row !important;
+  }
+
+  .rt-table th,
+  .rt-table td {
+    display: table-cell !important;
+  }
+
+  .rt-table tbody td::before {
+    content: none !important;
+  }
+
+  /* Colunas escondidas no mobile voltam a aparecer no papel. */
+  .rt-table th.hidden,
+  .rt-table td.hidden {
+    display: table-cell !important;
+  }
+}

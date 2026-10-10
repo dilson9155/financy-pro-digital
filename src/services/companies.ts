@@ -10,6 +10,7 @@ export interface CompanyInput {
   email?: string | null;
   phone?: string | null;
   address?: string | null;
+  logoUrl?: string | null;
 }
 
 /**
@@ -106,6 +107,7 @@ export async function updateCompany(
         address: input.address === undefined ? before.address : input.address,
         currency: input.currency ?? before.currency,
         timezone: input.timezone ?? before.timezone,
+        logoUrl: input.logoUrl === undefined ? before.logoUrl : input.logoUrl,
       },
     });
 

@@ -68,6 +68,25 @@ export async function login(input: LoginInput, meta: AuthMeta = {}) {
     throw new AppError("Usuario inativo. Procure o administrador.", 403, "INACTIVE");
   }
 
+  // Empresas suspensas/canceladas nao liberam acesso (exceto super-admin).
+  if (!user.isSuperAdmin) {
+    const activeMembership = await prisma.membership.findFirst({
+      where: {
+        userId: user.id,
+        status: "ACTIVE",
+        company: { status: "ACTIVE" },
+      },
+      select: { id: true },
+    });
+    if (!activeMembership) {
+      throw new AppError(
+        "Acesso suspenso: a empresa esta inativa. Entre em contato com o suporte.",
+        403,
+        "COMPANY_SUSPENDED",
+      );
+    }
+  }
+
   await prisma.user.update({
     where: { id: user.id },
     data: { failedLoginAttempts: 0, lockedUntil: null, lastLoginAt: new Date() },

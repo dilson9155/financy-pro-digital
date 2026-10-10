@@ -162,6 +162,19 @@ export const TRANSACTION_TYPE_LABELS: Record<string, string> = {
   OUTFLOW: "Saida",
 };
 
+export const COMPANY_STATUS_LABELS: Record<string, string> = {
+  ACTIVE: "Ativa",
+  SUSPENDED: "Suspensa",
+  CANCELED: "Cancelada",
+};
+
+export const INVOICE_STATUS_LABELS: Record<string, string> = {
+  PENDING: "Pendente",
+  PAID: "Paga",
+  OVERDUE: "Vencida",
+  CANCELED: "Cancelada",
+};
+
 export const TRANSACTION_ORIGIN_LABELS: Record<string, string> = {
   MANUAL: "Manual",
   PAYABLE_SETTLEMENT: "Baixa a pagar",

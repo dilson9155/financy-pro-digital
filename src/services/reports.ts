@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { D, round2 } from "@/lib/money";
 import { buildTransactionWhere } from "./transactions";
+import { buildTitleWhere } from "./titles";
 import { dateRange, RawSearchParams, str } from "@/lib/filters";
 
 const POSTED: Prisma.TransactionWhereInput = { status: "POSTED" };
@@ -255,4 +256,98 @@ export async function reportByCostCenter(
       count: c.count,
     }))
     .sort((a, b) => Number(b.outflow) - Number(a.outflow));
+}
+
+/**
+ * Relacao de contas a pagar/receber (titulos) com saldos e vencimento.
+ * Reaproveita os mesmos filtros da tela de titulos (situacao, periodo, busca…).
+ */
+export async function titlesReport(
+  companyId: string,
+  direction: "PAYABLE" | "RECEIVABLE",
+  sp: RawSearchParams,
+) {
+  const where = buildTitleWhere(companyId, sp, direction);
+  const titles = await prisma.financialTitle.findMany({
+    where,
+    orderBy: [{ dueDate: "asc" }, { createdAt: "asc" }],
+    include: {
+      partner: { select: { id: true, name: true } },
+      category: { select: { id: true, name: true } },
+    },
+  });
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const items = titles.map((t) => {
+    const open = round2(D(t.totalAmount).minus(t.settledAmount));
+    const overdue = open.greaterThan(0) && t.dueDate < today;
+    return {
+      id: t.id,
+      partner: t.partner?.name ?? null,
+      category: t.category?.name ?? null,
+      description: t.description,
+      documentNumber: t.documentNumber,
+      dueDate: t.dueDate,
+      issueDate: t.issueDate,
+      totalAmount: round2(t.totalAmount).toFixed(2),
+      settledAmount: round2(t.settledAmount).toFixed(2),
+      openAmount: open.toFixed(2),
+      status: t.status,
+      overdue,
+    };
+  });
+
+  const totalSum = items.reduce((acc, i) => acc.plus(i.totalAmount), D(0));
+  const settledSum = items.reduce((acc, i) => acc.plus(i.settledAmount), D(0));
+  const openSum = items.reduce((acc, i) => acc.plus(i.openAmount), D(0));
+  const overdueSum = items
+    .filter((i) => i.overdue)
+    .reduce((acc, i) => acc.plus(i.openAmount), D(0));
+
+  return {
+    direction,
+    items,
+    summary: {
+      count: items.length,
+      totalAmount: round2(totalSum).toFixed(2),
+      settledAmount: round2(settledSum).toFixed(2),
+      openAmount: round2(openSum).toFixed(2),
+      overdueAmount: round2(overdueSum).toFixed(2),
+    },
+  };
+}
+
+/**
+ * DRE simplificado do periodo: receitas e despesas realizadas por categoria
+ * (baseado nos lancamentos POSTED) e resultado liquido.
+ */
+export async function incomeStatement(companyId: string, sp: RawSearchParams) {
+  const rows = await reportByCategory(companyId, sp);
+
+  const revenues = rows
+    .filter((r) => Number(r.inflow) > 0)
+    .map((r) => ({ id: r.id, name: r.name, amount: r.inflow, count: r.count }));
+  const expenses = rows
+    .filter((r) => Number(r.outflow) > 0)
+    .map((r) => ({ id: r.id, name: r.name, amount: r.outflow, count: r.count }));
+
+  const totalRevenue = revenues.reduce((acc, r) => acc.plus(r.amount), D(0));
+  const totalExpense = expenses.reduce((acc, r) => acc.plus(r.amount), D(0));
+  const net = totalRevenue.minus(totalExpense);
+  const margin = totalRevenue.isZero()
+    ? D(0)
+    : net.dividedBy(totalRevenue).times(100);
+
+  return {
+    revenues,
+    expenses,
+    totalRevenue: round2(totalRevenue).toFixed(2),
+    totalExpense: round2(totalExpense).toFixed(2),
+    net: round2(net).toFixed(2),
+    margin: margin.toFixed(2),
+    revenueCount: revenues.reduce((acc, r) => acc + r.count, 0),
+    expenseCount: expenses.reduce((acc, r) => acc + r.count, 0),
+  };
 }

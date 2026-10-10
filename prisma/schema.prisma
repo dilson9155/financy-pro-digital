@@ -143,6 +143,14 @@ enum BackupStatus {
   FAILED
 }
 
+// Situacao de cobranca de uma fatura emitida pela plataforma para a empresa.
+enum InvoiceStatus {
+  PENDING
+  PAID
+  OVERDUE
+  CANCELED
+}
+
 // -----------------------------------------------------------------------------
 // Tenant, usuarios, RBAC
 // -----------------------------------------------------------------------------
@@ -157,9 +165,13 @@ model Company {
   address   String?
   currency  String        @default("BRL")
   timezone  String        @default("America/Sao_Paulo")
-  status    CompanyStatus @default(ACTIVE)
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  logoUrl   String? // logo da empresa (data URL ou URL publica)
+  status          CompanyStatus @default(ACTIVE)
+  billingEmail    String?
+  suspendedReason String?
+  suspendedAt     DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   memberships    Membership[]
   roles          Role[]
@@ -180,6 +192,7 @@ model Company {
   auditLogs      AuditLog[]
   settings       Setting[]
   backups        Backup[]
+  invoices       Invoice[]
 
   @@index([status])
   @@map("companies")
@@ -190,6 +203,7 @@ model User {
   name               String
   email              String     @unique
   passwordHash       String
+  avatarUrl          String? // foto do usuario (data URL ou URL publica)
   status             UserStatus @default(ACTIVE)
   isSuperAdmin       Boolean    @default(false)
   lastLoginAt        DateTime?
@@ -725,4 +739,43 @@ model Backup {
 
   @@index([companyId, createdAt])
   @@map("backups")
+}
+
+// -----------------------------------------------------------------------------
+// Administracao da plataforma (super-admin) e cobranca
+// -----------------------------------------------------------------------------
+
+/// Configuracao global da plataforma (key/value), fora do escopo de empresa.
+model PlatformSetting {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  @@map("platform_settings")
+}
+
+/// Fatura/cobranca emitida pela plataforma para uma empresa cliente.
+model Invoice {
+  id          String            @id @default(uuid()) @db.Uuid
+  companyId   String            @db.Uuid
+  description String
+  amount      Decimal           @db.Decimal(18, 2)
+  dueDate     DateTime
+  status      InvoiceStatus     @default(PENDING)
+  method      SettlementMethod?
+  pixKeyType  PixKeyType?
+  pixKey      String?
+  boletoUrl   String?
+  paidAt      DateTime?
+  notes       String?
+  createdById String?           @db.Uuid
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, status])
+  @@index([status, dueDate])
+  @@map("invoices")
 }

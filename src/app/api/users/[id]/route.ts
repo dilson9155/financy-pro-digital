@@ -4,6 +4,7 @@ import { jsonOk, route } from "@/lib/http";
 import { requireApiAuth } from "@/lib/api";
 import { PERMISSIONS } from "@/lib/permissions";
 import { updateUserProfile } from "@/services/users";
+import { imageDataUrl } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,7 @@ const schema = z.object({
   name: z.string().min(2).max(160).optional(),
   email: z.string().email().optional(),
   status: z.enum(["ACTIVE", "INACTIVE", "LOCKED"]).optional(),
+  avatarUrl: imageDataUrl.nullable().optional(),
 });
 
 export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {

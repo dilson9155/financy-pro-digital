@@ -53,6 +53,32 @@ function refinePix(data: PixFields, ctx: z.RefinementCtx): void {
   }
 }
 
+/** Variante para faturas, cujo campo de forma de pagamento se chama `method`. */
+function refineInvoicePix(
+  data: {
+    method?: string | null;
+    pixKeyType?: string | null;
+    pixKey?: string | null;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  if (data.method !== "PIX") return;
+  if (!data.pixKeyType) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["pixKeyType"],
+      message: "Selecione o tipo da chave Pix.",
+    });
+  }
+  if (!data.pixKey || data.pixKey.trim() === "") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["pixKey"],
+      message: "Informe a chave Pix.",
+    });
+  }
+}
+
 /** Campos de forma de pagamento/Pix compartilhados entre criar e editar titulos. */
 const paymentFields = {
   paymentMethod: settlementMethodEnum.optional().nullable(),
@@ -137,6 +163,22 @@ export const createTransactionSchema = z.object({
 });
 
 export type CreateTransactionInput = z.infer<typeof createTransactionSchema>;
+
+/** Edicao de um lancamento manual (campos opcionais). */
+export const updateTransactionSchema = z.object({
+  bankAccountId: uuid.optional(),
+  type: z.enum(["INFLOW", "OUTFLOW"]).optional(),
+  amount: money.optional(),
+  date: dateInput.optional(),
+  competenceDate: dateInput.optional().nullable(),
+  description: z.string().min(1).max(500).optional(),
+  categoryId: uuid.optional().nullable(),
+  costCenterId: uuid.optional().nullable(),
+  accountPlanId: uuid.optional().nullable(),
+  partnerId: uuid.optional().nullable(),
+});
+
+export type UpdateTransactionInput = z.infer<typeof updateTransactionSchema>;
 
 export const transferSchema = z.object({
   fromBankAccountId: uuid,
@@ -254,4 +296,88 @@ export const reconcileSchema = z.object({
 export const settingsSchema = z.object({
   key: z.string().min(1).max(120),
   value: z.unknown(),
+});
+
+/**
+ * Imagem embutida como data URL (PNG ou JPEG). Usada para a logo da empresa
+ * e a foto do usuario. Limite de ~1,5 MB para nao sobrecarregar o banco.
+ */
+export const imageDataUrl = z
+  .string()
+  .max(2_000_000, "Imagem muito grande (máximo ~1,5 MB).")
+  .refine(
+    (value) => /^data:image\/(png|jpe?g);base64,[a-z0-9+/=]+$/i.test(value),
+    "Formato de imagem inválido (use PNG ou JPEG).",
+  );
+
+// -----------------------------------------------------------------------------
+// Administracao da plataforma (super-admin) e cobranca
+// -----------------------------------------------------------------------------
+
+export const companyStatusEnum = z.enum(["ACTIVE", "SUSPENDED", "CANCELED"]);
+export const invoiceStatusEnum = z.enum([
+  "PENDING",
+  "PAID",
+  "OVERDUE",
+  "CANCELED",
+]);
+
+/** Edicao de dados de uma empresa pelo super-admin. */
+export const adminCompanyUpdateSchema = z.object({
+  name: z.string().min(2).max(200).optional(),
+  legalName: z.string().max(200).optional().nullable(),
+  document: z.string().max(30).optional().nullable(),
+  email: z.string().email().optional().nullable(),
+  billingEmail: z.string().email().optional().nullable(),
+  phone: z.string().max(40).optional().nullable(),
+  address: z.string().max(300).optional().nullable(),
+  currency: z.string().length(3).optional(),
+  timezone: z.string().max(60).optional(),
+});
+
+/** Ativacao/inativacao de empresa (ex.: falta de pagamento). */
+export const adminCompanyStatusSchema = z.object({
+  status: companyStatusEnum,
+  reason: z.string().trim().max(300).optional().nullable(),
+});
+
+/** Emissao de fatura/cobranca para uma empresa. */
+export const invoiceCreateSchema = z
+  .object({
+    companyId: uuid,
+    description: z.string().trim().min(1, "Informe a descricao").max(300),
+    amount: money,
+    dueDate: dateInput,
+    method: settlementMethodEnum.optional().nullable(),
+    pixKeyType: pixKeyTypeEnum.optional().nullable(),
+    pixKey: z.string().trim().max(200).optional().nullable(),
+    boletoUrl: z.string().url("Link do boleto invalido").max(600).optional().nullable(),
+    notes: z.string().max(1000).optional().nullable(),
+  })
+  .superRefine(refineInvoicePix);
+
+/** Atualizacao de uma fatura (marcar paga, cancelar, editar). */
+export const invoiceUpdateSchema = z.object({
+  description: z.string().trim().min(1).max(300).optional(),
+  amount: money.optional(),
+  dueDate: dateInput.optional(),
+  status: invoiceStatusEnum.optional(),
+  method: settlementMethodEnum.optional().nullable(),
+  pixKeyType: pixKeyTypeEnum.optional().nullable(),
+  pixKey: z.string().trim().max(200).optional().nullable(),
+  boletoUrl: z.string().url("Link do boleto invalido").max(600).optional().nullable(),
+  notes: z.string().max(1000).optional().nullable(),
+});
+
+/** Configuracao global de cobranca da plataforma (chave Pix, contato etc.). */
+export const platformBillingSchema = z.object({
+  pixKeyType: pixKeyTypeEnum.optional().nullable(),
+  pixKey: z.string().trim().max(200).optional().nullable(),
+  pixHolder: z.string().trim().max(200).optional().nullable(),
+  bankName: z.string().trim().max(200).optional().nullable(),
+  paymentInstructions: z.string().trim().max(2000).optional().nullable(),
+  contactEmail: z.string().email().optional().nullable(),
+  contactPhone: z.string().trim().max(40).optional().nullable(),
+  defaultAmount: money.optional(),
+  defaultDueDays: z.coerce.number().int().min(0).max(365).optional(),
 });

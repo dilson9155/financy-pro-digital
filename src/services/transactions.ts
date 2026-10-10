@@ -1,11 +1,18 @@
 import { Prisma } from "@prisma/client";
-import type { Transaction } from "@prisma/client";
+import type { Transaction, TransactionType } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { round2 } from "@/lib/money";
-import { conflict, notFound } from "@/lib/http";
+import { D, round2, type MoneyValue } from "@/lib/money";
+import { badRequest, conflict, notFound } from "@/lib/http";
 import { AUDIT_ACTIONS, recordAudit } from "@/lib/audit";
-import { postTransaction, reverseTransaction } from "@/lib/ledger";
-import type { CreateTransactionInput } from "@/lib/validation";
+import {
+  lockBankAccount,
+  postTransaction,
+  reverseTransaction,
+} from "@/lib/ledger";
+import type {
+  CreateTransactionInput,
+  UpdateTransactionInput,
+} from "@/lib/validation";
 import {
   dateRange,
   enumList,
@@ -98,6 +105,177 @@ export async function reverseManualTransaction(
     });
 
     return counter;
+  });
+}
+
+/** Efeito assinado no saldo: entrada soma, saida subtrai. */
+function signedAmount(
+  type: TransactionType,
+  amount: MoneyValue,
+): Prisma.Decimal {
+  const value = D(amount);
+  return type === "INFLOW" ? value : value.negated();
+}
+
+function assertEditable(origin: string, status: string, action: string): void {
+  if (
+    !REVERSIBLE_ORIGINS.includes(
+      origin as (typeof REVERSIBLE_ORIGINS)[number],
+    )
+  ) {
+    throw conflict(
+      `Somente lancamentos manuais/ajustes podem ser ${action} diretamente. Para baixas e transferencias, use o fluxo especifico.`,
+    );
+  }
+  if (status !== "POSTED") {
+    throw conflict(
+      `Lancamentos estornados nao podem ser ${action}. Mantenha o historico.`,
+    );
+  }
+}
+
+/**
+ * Edita um lancamento manual, ajustando o saldo da(s) conta(s) envolvida(s).
+ * Trocar de conta reverte o efeito na origem e aplica na conta de destino.
+ */
+export async function updateManualTransaction(
+  companyId: string,
+  userId: string | null,
+  transactionId: string,
+  input: UpdateTransactionInput,
+): Promise<Transaction> {
+  return prisma.$transaction(async (tx) => {
+    const original = await tx.transaction.findFirst({
+      where: { id: transactionId, companyId },
+    });
+    if (!original) throw notFound("Lancamento nao encontrado.");
+    assertEditable(original.origin, original.status, "editados");
+
+    const newBankAccountId = input.bankAccountId ?? original.bankAccountId;
+    const newType = input.type ?? original.type;
+    const newAmount = round2(input.amount ?? original.amount);
+    if (!newAmount.greaterThan(0)) {
+      throw badRequest("O valor da movimentacao deve ser maior que zero.");
+    }
+
+    const oldSigned = signedAmount(original.type, original.amount);
+    const newSigned = signedAmount(newType, newAmount);
+
+    // Bloqueia as contas em ordem deterministica (evita deadlock).
+    const firstId =
+      original.bankAccountId < newBankAccountId
+        ? original.bankAccountId
+        : newBankAccountId;
+    const secondId =
+      original.bankAccountId < newBankAccountId
+        ? newBankAccountId
+        : original.bankAccountId;
+    const firstRow = await lockBankAccount(tx, companyId, firstId);
+    const secondRow =
+      firstId === secondId ? firstRow : await lockBankAccount(tx, companyId, secondId);
+    const rowFor = (id: string) => (id === firstId ? firstRow : secondRow);
+
+    const balanceAfterRevert = D(rowFor(original.bankAccountId).currentBalance).minus(
+      oldSigned,
+    );
+
+    let newBalance: Prisma.Decimal;
+    if (newBankAccountId === original.bankAccountId) {
+      newBalance = balanceAfterRevert.plus(newSigned);
+      await tx.bankAccount.update({
+        where: { id: original.bankAccountId },
+        data: { currentBalance: newBalance, version: { increment: 1 } },
+      });
+    } else {
+      await tx.bankAccount.update({
+        where: { id: original.bankAccountId },
+        data: { currentBalance: balanceAfterRevert, version: { increment: 1 } },
+      });
+      newBalance = D(rowFor(newBankAccountId).currentBalance).plus(newSigned);
+      await tx.bankAccount.update({
+        where: { id: newBankAccountId },
+        data: { currentBalance: newBalance, version: { increment: 1 } },
+      });
+    }
+
+    const updated = await tx.transaction.update({
+      where: { id: original.id },
+      data: {
+        bankAccountId: newBankAccountId,
+        type: newType,
+        amount: newAmount,
+        balanceAfter: newBalance,
+        date: input.date ?? original.date,
+        competenceDate:
+          input.competenceDate ?? input.date ?? original.competenceDate,
+        description: input.description ?? original.description,
+        categoryId:
+          input.categoryId === undefined ? original.categoryId : input.categoryId,
+        costCenterId:
+          input.costCenterId === undefined
+            ? original.costCenterId
+            : input.costCenterId,
+        accountPlanId:
+          input.accountPlanId === undefined
+            ? original.accountPlanId
+            : input.accountPlanId,
+        partnerId:
+          input.partnerId === undefined ? original.partnerId : input.partnerId,
+        version: { increment: 1 },
+      },
+    });
+
+    await recordAudit(tx, {
+      companyId,
+      userId,
+      action: AUDIT_ACTIONS.UPDATE,
+      entity: "Transaction",
+      entityId: original.id,
+      before: original,
+      after: updated,
+    });
+
+    return updated;
+  });
+}
+
+/**
+ * Exclui um lancamento manual e reverte seu efeito no saldo da conta.
+ * Restrito a lancamentos postados e de origem manual/ajuste.
+ */
+export async function deleteManualTransaction(
+  companyId: string,
+  userId: string | null,
+  transactionId: string,
+): Promise<{ id: string }> {
+  return prisma.$transaction(async (tx) => {
+    const original = await tx.transaction.findFirst({
+      where: { id: transactionId, companyId },
+    });
+    if (!original) throw notFound("Lancamento nao encontrado.");
+    assertEditable(original.origin, original.status, "excluidos");
+
+    const account = await lockBankAccount(tx, companyId, original.bankAccountId);
+    const newBalance = D(account.currentBalance).minus(
+      signedAmount(original.type, original.amount),
+    );
+    await tx.bankAccount.update({
+      where: { id: original.bankAccountId },
+      data: { currentBalance: newBalance, version: { increment: 1 } },
+    });
+
+    await tx.transaction.delete({ where: { id: original.id } });
+
+    await recordAudit(tx, {
+      companyId,
+      userId,
+      action: AUDIT_ACTIONS.DELETE,
+      entity: "Transaction",
+      entityId: transactionId,
+      before: original,
+    });
+
+    return { id: transactionId };
   });
 }
 

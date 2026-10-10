@@ -7,18 +7,34 @@ export interface SessionUser {
   name: string;
   email: string;
   isSuperAdmin: boolean;
+  avatarUrl: string | null;
 }
 
 export interface SessionMembership {
   companyId: string;
   companyName: string;
+  companyLogoUrl: string | null;
   roleId: string;
   roleName: string;
   permissions: string[];
 }
 
+export interface SessionCompany {
+  id: string;
+  name: string;
+  legalName: string | null;
+  document: string | null;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  currency: string;
+  timezone: string;
+  logoUrl: string | null;
+}
+
 export interface SessionValue {
   user: SessionUser;
+  company: SessionCompany;
   companyId: string;
   permissions: string[];
   memberships: SessionMembership[];

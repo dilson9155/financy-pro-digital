@@ -26,6 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "./ui";
+import { Avatar } from "./ui";
 import { BrandSidebar } from "./brand";
 import { api } from "@/lib/client";
 import {
@@ -41,6 +42,8 @@ interface NavItem {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   permission: string;
+  /** So aparece para super-admins da plataforma. */
+  superAdminOnly?: boolean;
 }
 
 const NAV: { group: string; items: NavItem[] }[] = [
@@ -177,6 +180,32 @@ const NAV: { group: string; items: NavItem[] }[] = [
       },
     ],
   },
+  {
+    group: "Plataforma",
+    items: [
+      {
+        href: "/admin/empresas",
+        label: "Empresas",
+        icon: Building2,
+        permission: "platform.manage",
+        superAdminOnly: true,
+      },
+      {
+        href: "/admin/cobrancas",
+        label: "Cobranças",
+        icon: Receipt,
+        permission: "platform.manage",
+        superAdminOnly: true,
+      },
+      {
+        href: "/admin/configuracoes",
+        label: "Config. da plataforma",
+        icon: Settings,
+        permission: "platform.manage",
+        superAdminOnly: true,
+      },
+    ],
+  },
 ];
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
@@ -186,10 +215,17 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <div className="flex h-full flex-col">
-      <BrandSidebar />
+      <BrandSidebar
+        logoUrl={session.company.logoUrl}
+        companyName={session.company.name}
+      />
       <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
         {NAV.map((group) => {
-          const items = group.items.filter((i) => can(i.permission));
+          const items = group.items.filter(
+            (i) =>
+              can(i.permission) &&
+              (!i.superAdminOnly || session.user.isSuperAdmin),
+          );
           if (items.length === 0) return null;
           return (
             <div key={group.group}>
@@ -254,7 +290,7 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
   }
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b bg-background/80 px-4 backdrop-blur md:px-6">
+    <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b bg-background/80 px-4 backdrop-blur md:px-6 print:hidden">
       <div className="flex items-center gap-3">
         <button
           type="button"
@@ -289,6 +325,12 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
               ?.roleName ?? "—"}
           </p>
         </div>
+        <Avatar
+          name={session.user.name}
+          src={session.user.avatarUrl}
+          size="sm"
+          className="hidden sm:grid"
+        />
         <button
           type="button"
           onClick={logout}
@@ -316,7 +358,7 @@ export function AppShell({
       <ToastProvider>
       <div className="flex min-h-screen">
         {/* Sidebar desktop */}
-        <aside className="hidden w-64 shrink-0 border-r bg-card md:block">
+        <aside className="hidden w-64 shrink-0 border-r bg-card md:block print:hidden">
           <div className="sticky top-0 h-screen">
             <SidebarContent />
           </div>
@@ -324,7 +366,7 @@ export function AppShell({
 
         {/* Sidebar mobile */}
         {mobileOpen ? (
-          <div className="fixed inset-0 z-50 md:hidden">
+          <div className="fixed inset-0 z-50 md:hidden print:hidden">
             <div
               className="absolute inset-0 bg-black/40"
               onClick={() => setMobileOpen(false)}
@@ -345,8 +387,10 @@ export function AppShell({
 
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar onMenu={() => setMobileOpen(true)} />
-          <main className="flex-1 p-4 md:p-6">
-            <div className="mx-auto max-w-7xl space-y-6">{children}</div>
+          <main className="flex-1 p-4 md:p-6 print:p-0">
+            <div className="mx-auto max-w-7xl space-y-6 print:max-w-none">
+              {children}
+            </div>
           </main>
         </div>
       </div>

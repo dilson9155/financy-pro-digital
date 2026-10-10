@@ -3,11 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, buildQuery } from "@/lib/client";
 import { useApiQuery } from "@/lib/hooks";
+import { fileToDataUrl } from "@/lib/image";
 import { useCan } from "@/components/session-context";
 import { useToast } from "@/components/toast";
 import { FilterBar, type FilterValues } from "@/components/filter-bar";
 import { Modal } from "@/components/modal";
 import {
+  Avatar,
   Badge,
   Button,
   Card,
@@ -37,6 +39,7 @@ interface UserRow {
   userStatus: string;
   lastLoginAt: string | null;
   isSuperAdmin: boolean;
+  avatarUrl: string | null;
   roleId: string;
   roleName: string;
 }
@@ -120,16 +123,41 @@ export function UsersView() {
     }
   }
 
-  // ---- edita vinculo (papel / situacao) ----
+  // ---- edita vinculo (papel / situacao / foto) ----
   const [editState, setEditState] = useState<UserRow | null>(null);
   const [editForm, setEditForm] = useState<Record<string, string>>({});
   const [editing, setEditing] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
 
   function openEdit(row: UserRow) {
     setEditState(row);
-    setEditForm({ roleId: row.roleId, status: row.membershipStatus });
+    setEditForm({
+      roleId: row.roleId,
+      status: row.membershipStatus,
+      avatarUrl: row.avatarUrl ?? "",
+    });
     setEditError(null);
+    setAvatarError(null);
+  }
+
+  async function onAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setAvatarError(null);
+    try {
+      const dataUrl = await fileToDataUrl(file, {
+        maxDimension: 256,
+        format: "image/jpeg",
+        quality: 0.85,
+      });
+      setEditForm((f) => ({ ...f, avatarUrl: dataUrl }));
+    } catch (err) {
+      setAvatarError(
+        err instanceof Error ? err.message : "Erro ao processar a imagem.",
+      );
+    }
   }
 
   async function saveMembership() {
@@ -141,7 +169,12 @@ export function UsersView() {
         roleId: editForm.roleId,
         status: editForm.status,
       });
-      notify("Vinculo atualizado.", "success");
+      if ((editForm.avatarUrl ?? "") !== (editState.avatarUrl ?? "")) {
+        await api.patch(`/api/users/${editState.userId}`, {
+          avatarUrl: editForm.avatarUrl || null,
+        });
+      }
+      notify("Vínculo atualizado.", "success");
       setEditState(null);
       await reload();
     } catch (err) {
@@ -247,8 +280,13 @@ export function UsersView() {
                   return (
                     <TR key={u.membershipId}>
                       <TD>
-                        <p className="font-medium">{u.name}</p>
-                        <p className="text-xs text-muted-foreground">{u.email}</p>
+                        <div className="flex items-center gap-3">
+                          <Avatar name={u.name} src={u.avatarUrl} size="sm" />
+                          <div className="min-w-0">
+                            <p className="font-medium">{u.name}</p>
+                            <p className="text-xs text-muted-foreground">{u.email}</p>
+                          </div>
+                        </div>
                       </TD>
                       <TD className="hidden whitespace-nowrap text-muted-foreground md:table-cell">
                         {u.lastLoginAt ? formatDateTime(u.lastLoginAt) : "Nunca"}
@@ -358,6 +396,42 @@ export function UsersView() {
         }
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field
+            label="Foto do usuário"
+            className="sm:col-span-2"
+            hint="PNG ou JPEG, até ~1,5 MB."
+          >
+            <div className="flex flex-wrap items-center gap-3">
+              <Avatar
+                name={editState?.name ?? "?"}
+                src={editForm.avatarUrl || null}
+                size="lg"
+              />
+              <label className="cursor-pointer rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent">
+                Escolher foto
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  className="hidden"
+                  onChange={onAvatarChange}
+                />
+              </label>
+              {editForm.avatarUrl ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive"
+                  onClick={() => setEditForm((f) => ({ ...f, avatarUrl: "" }))}
+                >
+                  Remover
+                </Button>
+              ) : null}
+            </div>
+            {avatarError ? (
+              <p className="mt-2 text-xs text-red-600">{avatarError}</p>
+            ) : null}
+          </Field>
           <Field label="Papel">
             <Select value={editForm.roleId ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, roleId: e.target.value }))}>
               {roles.map((r) => (

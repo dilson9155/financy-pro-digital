@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { api } from "@/lib/client";
 import { useApiQuery } from "@/lib/hooks";
+import { fileToDataUrl } from "@/lib/image";
 import { useToast } from "@/components/toast";
 import { useSession } from "@/components/session-context";
 import {
@@ -31,6 +32,7 @@ interface SettingsData {
     address: string | null;
     currency: string;
     timezone: string;
+    logoUrl: string | null;
     status: string;
   };
 }
@@ -68,6 +70,25 @@ export function SettingsView() {
   const [generic, setGeneric] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [logoError, setLogoError] = useState<string | null>(null);
+
+  async function onLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setLogoError(null);
+    try {
+      const dataUrl = await fileToDataUrl(file, {
+        maxDimension: 512,
+        format: "image/png",
+      });
+      setCompany((c) => ({ ...c, logoUrl: dataUrl }));
+    } catch (err) {
+      setLogoError(
+        err instanceof Error ? err.message : "Erro ao processar a imagem.",
+      );
+    }
+  }
 
   function hydrate() {
     if (!data) return;
@@ -109,6 +130,7 @@ export function SettingsView() {
           address: company.address || null,
           currency: company.currency || "BRL",
           timezone: company.timezone || "America/Sao_Paulo",
+          logoUrl: company.logoUrl || null,
         },
       });
       notify("Configurações salvas com sucesso.", "success");
@@ -157,6 +179,49 @@ export function SettingsView() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field
+              label="Logo da empresa"
+              className="sm:col-span-2"
+              hint="PNG ou JPEG, até ~1,5 MB. Aparece na barra lateral e no cabeçalho dos relatórios."
+            >
+              <div className="flex flex-wrap items-center gap-3">
+                {company.logoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={company.logoUrl}
+                    alt="Logo da empresa"
+                    className="h-14 w-14 shrink-0 rounded-md border object-contain"
+                  />
+                ) : (
+                  <div className="grid h-14 w-14 shrink-0 place-items-center rounded-md border text-center text-[10px] text-muted-foreground">
+                    Sem logo
+                  </div>
+                )}
+                <label className="cursor-pointer rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent">
+                  Escolher imagem
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    className="hidden"
+                    onChange={onLogoChange}
+                  />
+                </label>
+                {company.logoUrl ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive"
+                    onClick={() => setCompany((c) => ({ ...c, logoUrl: "" }))}
+                  >
+                    Remover
+                  </Button>
+                ) : null}
+              </div>
+              {logoError ? (
+                <p className="mt-2 text-xs text-red-600">{logoError}</p>
+              ) : null}
+            </Field>
             <Field label="Nome fantasia">
               <Input required value={company.name ?? ""} onChange={(e) => setCompany((c) => ({ ...c, name: e.target.value }))} />
             </Field>

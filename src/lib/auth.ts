@@ -26,9 +26,24 @@ export async function verifyPassword(
 export interface MembershipInfo {
   companyId: string;
   companyName: string;
+  companyLogoUrl: string | null;
   roleId: string;
   roleName: string;
   permissions: string[];
+}
+
+/** Dados da empresa ativa exibidos no shell e nos relatorios. */
+export interface CompanyInfo {
+  id: string;
+  name: string;
+  legalName: string | null;
+  document: string | null;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  currency: string;
+  timezone: string;
+  logoUrl: string | null;
 }
 
 export interface AuthContext {
@@ -37,9 +52,11 @@ export interface AuthContext {
     name: string;
     email: string;
     isSuperAdmin: boolean;
+    avatarUrl: string | null;
   };
   sessionId: string;
   companyId: string | null;
+  company: CompanyInfo | null;
   memberships: MembershipInfo[];
   permissions: Set<string>;
 }
@@ -107,9 +124,12 @@ export async function getAuthContext(): Promise<AuthContext | null> {
 
   const memberships: MembershipInfo[] = session.user.memberships
     .filter((m) => m.status === "ACTIVE")
+    // Empresas inativas/suspensas nao concedem acesso (super-admin enxerga tudo).
+    .filter((m) => session.user.isSuperAdmin || m.company.status === "ACTIVE")
     .map((m) => ({
       companyId: m.companyId,
       companyName: m.company.name,
+      companyLogoUrl: m.company.logoUrl,
       roleId: m.roleId,
       roleName: m.role.name,
       permissions: m.role.permissions.map((p) => p.permission),
@@ -121,6 +141,23 @@ export async function getAuthContext(): Promise<AuthContext | null> {
       ? requested
       : memberships[0]?.companyId ?? null;
 
+  const activeMembership =
+    session.user.memberships.find((m) => m.companyId === activeId) ?? null;
+  const company: CompanyInfo | null = activeMembership
+    ? {
+        id: activeMembership.company.id,
+        name: activeMembership.company.name,
+        legalName: activeMembership.company.legalName,
+        document: activeMembership.company.document,
+        email: activeMembership.company.email,
+        phone: activeMembership.company.phone,
+        address: activeMembership.company.address,
+        currency: activeMembership.company.currency,
+        timezone: activeMembership.company.timezone,
+        logoUrl: activeMembership.company.logoUrl,
+      }
+    : null;
+
   const permissions = new Set<string>(
     memberships.find((m) => m.companyId === activeId)?.permissions ?? [],
   );
@@ -131,9 +168,11 @@ export async function getAuthContext(): Promise<AuthContext | null> {
       name: session.user.name,
       email: session.user.email,
       isSuperAdmin: session.user.isSuperAdmin,
+      avatarUrl: session.user.avatarUrl,
     },
     sessionId: session.id,
     companyId: activeId,
+    company,
     memberships,
     permissions,
   };
@@ -165,6 +204,13 @@ export async function requirePermission(
 ): Promise<AuthContext & { companyId: string }> {
   const ctx = await requireCompany();
   if (!can(ctx, permission)) redirect("/sem-permissao");
+  return ctx;
+}
+
+/** Garante que o usuario seja super-admin da plataforma (paginas). */
+export async function requireSuperAdmin(): Promise<AuthContext> {
+  const ctx = await requireAuth();
+  if (!ctx.user.isSuperAdmin) redirect("/sem-permissao");
   return ctx;
 }
 

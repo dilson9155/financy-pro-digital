@@ -6,6 +6,7 @@ import { PERMISSIONS } from "@/lib/permissions";
 import { getSettings, setSetting } from "@/services/settings";
 import { updateCompany } from "@/services/companies";
 import { getCompany } from "@/services/companies";
+import { imageDataUrl } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,7 @@ const schema = z.object({
       address: z.string().max(300).optional().nullable(),
       currency: z.string().length(3).optional(),
       timezone: z.string().max(60).optional(),
+      logoUrl: imageDataUrl.nullable().optional(),
     })
     .optional(),
 });

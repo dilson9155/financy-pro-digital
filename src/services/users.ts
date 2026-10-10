@@ -41,6 +41,7 @@ export async function listUsers(companyId: string, sp: RawSearchParams) {
             status: true,
             lastLoginAt: true,
             isSuperAdmin: true,
+            avatarUrl: true,
           },
         },
         role: { select: { id: true, name: true } },
@@ -59,6 +60,7 @@ export async function listUsers(companyId: string, sp: RawSearchParams) {
       userStatus: m.user.status,
       lastLoginAt: m.user.lastLoginAt,
       isSuperAdmin: m.user.isSuperAdmin,
+      avatarUrl: m.user.avatarUrl,
       roleId: m.role.id,
       roleName: m.role.name,
     })),
@@ -202,7 +204,12 @@ export async function resetUserPassword(
 export async function updateUserProfile(
   actorId: string | null,
   targetUserId: string,
-  data: { name?: string; email?: string; status?: "ACTIVE" | "INACTIVE" | "LOCKED" },
+  data: {
+    name?: string;
+    email?: string;
+    status?: "ACTIVE" | "INACTIVE" | "LOCKED";
+    avatarUrl?: string | null;
+  },
 ) {
   return prisma.$transaction(async (tx) => {
     const before = await tx.user.findUnique({ where: { id: targetUserId } });
@@ -221,6 +228,8 @@ export async function updateUserProfile(
         name: data.name ?? before.name,
         email: data.email ? data.email.toLowerCase() : before.email,
         status: data.status ?? before.status,
+        avatarUrl:
+          data.avatarUrl === undefined ? before.avatarUrl : data.avatarUrl,
       },
     });
 

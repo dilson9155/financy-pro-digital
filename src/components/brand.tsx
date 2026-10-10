@@ -46,14 +46,35 @@ export function BrandMark({
 
 /**
  * Cabecalho de marca da barra lateral (link para o dashboard).
+ * Se a empresa ativa tiver logo cadastrada, ela substitui a marca do sistema.
  */
-export function BrandSidebar() {
+export function BrandSidebar({
+  logoUrl,
+  companyName,
+}: {
+  logoUrl?: string | null;
+  companyName?: string | null;
+} = {}) {
+  const showCompany = Boolean(logoUrl);
   return (
     <Link href="/dashboard" className="flex h-16 items-center gap-2 border-b px-5">
-      <BrandMark />
-      <div className="leading-tight">
-        <p className="text-sm font-semibold">{BRAND.shortName}</p>
-        <p className="text-xs text-muted-foreground">{BRAND.shortNameSuffix}</p>
+      {showCompany ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={logoUrl as string}
+          alt={companyName ?? "Logo da empresa"}
+          className="h-8 w-8 shrink-0 rounded-md object-contain"
+        />
+      ) : (
+        <BrandMark />
+      )}
+      <div className="min-w-0 leading-tight">
+        <p className="truncate text-sm font-semibold">
+          {companyName || BRAND.shortName}
+        </p>
+        <p className="truncate text-xs text-muted-foreground">
+          {companyName ? BRAND.shortName : BRAND.shortNameSuffix}
+        </p>
       </div>
     </Link>
   );

@@ -10,6 +10,12 @@ import {
   reconcileSchema,
   settingsSchema,
   roleSchema,
+  adminCompanyUpdateSchema,
+  adminCompanyStatusSchema,
+  invoiceCreateSchema,
+  invoiceUpdateSchema,
+  platformBillingSchema,
+  updateTransactionSchema,
 } from "@/lib/validation";
 
 const UUID = "11111111-1111-4111-8111-111111111111";
@@ -302,5 +308,173 @@ describe("validation - settings e roles", () => {
   it("role rejeita nome curto ou ausente", () => {
     expect(roleSchema.safeParse({ name: "A" }).success).toBe(false);
     expect(roleSchema.safeParse({ permissions: [] }).success).toBe(false);
+  });
+});
+
+describe("validation - administracao de empresas", () => {
+  it("adminCompanyUpdate aceita objeto vazio (tudo opcional)", () => {
+    expect(adminCompanyUpdateSchema.safeParse({}).success).toBe(true);
+  });
+
+  it("adminCompanyUpdate aceita dados completos", () => {
+    const r = adminCompanyUpdateSchema.safeParse({
+      name: "Empresa Nova",
+      legalName: "Empresa Nova LTDA",
+      document: "11.222.333/0001-81",
+      email: "contato@empresa.com",
+      billingEmail: "financeiro@empresa.com",
+      phone: "(11) 98765-4321",
+      address: "Rua X, 100",
+      currency: "BRL",
+      timezone: "America/Sao_Paulo",
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("adminCompanyUpdate rejeita nome curto e e-mail invalido", () => {
+    expect(adminCompanyUpdateSchema.safeParse({ name: "A" }).success).toBe(false);
+    expect(
+      adminCompanyUpdateSchema.safeParse({ email: "nao-e-email" }).success,
+    ).toBe(false);
+    expect(
+      adminCompanyUpdateSchema.safeParse({ billingEmail: "x" }).success,
+    ).toBe(false);
+  });
+
+  it("adminCompanyStatus aceita status validos e rejeita invalidos", () => {
+    expect(
+      adminCompanyStatusSchema.safeParse({ status: "SUSPENDED" }).success,
+    ).toBe(true);
+    expect(
+      adminCompanyStatusSchema.safeParse({
+        status: "CANCELED",
+        reason: "Falta de pagamento",
+      }).success,
+    ).toBe(true);
+    expect(
+      adminCompanyStatusSchema.safeParse({ status: "FOO" }).success,
+    ).toBe(false);
+  });
+});
+
+describe("validation - cobrancas (invoices)", () => {
+  const base = {
+    companyId: UUID,
+    description: "Mensalidade — Outubro",
+    amount: "99.90",
+    dueDate: "2026-10-15",
+  };
+
+  it("aceita cobranca simples sem forma de pagamento", () => {
+    expect(invoiceCreateSchema.safeParse(base).success).toBe(true);
+  });
+
+  it("aceita cobranca PIX com tipo e chave", () => {
+    const r = invoiceCreateSchema.safeParse({
+      ...base,
+      method: "PIX",
+      pixKeyType: "EMAIL",
+      pixKey: "financeiro@empresa.com",
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("exige chave quando a forma for PIX", () => {
+    expect(
+      invoiceCreateSchema.safeParse({ ...base, method: "PIX" }).success,
+    ).toBe(false);
+  });
+
+  it("rejeita empresa, descricao e valor invalidos", () => {
+    expect(invoiceCreateSchema.safeParse({ ...base, companyId: "x" }).success).toBe(
+      false,
+    );
+    expect(
+      invoiceCreateSchema.safeParse({ ...base, description: "  " }).success,
+    ).toBe(false);
+    expect(
+      invoiceCreateSchema.safeParse({ ...base, amount: "lixo" }).success,
+    ).toBe(false);
+  });
+
+  it("rejeita link de boleto invalido", () => {
+    expect(
+      invoiceCreateSchema.safeParse({ ...base, boletoUrl: "nao-e-url" }).success,
+    ).toBe(false);
+    expect(
+      invoiceCreateSchema.safeParse({
+        ...base,
+        boletoUrl: "https://banco.com/boleto/123",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("invoiceUpdate aceita apenas o status", () => {
+    expect(invoiceUpdateSchema.safeParse({ status: "PAID" }).success).toBe(true);
+    expect(invoiceUpdateSchema.safeParse({ status: "INVALIDO" }).success).toBe(
+      false,
+    );
+  });
+});
+
+describe("validation - configuracao de cobranca da plataforma", () => {
+  it("aceita objeto vazio", () => {
+    expect(platformBillingSchema.safeParse({}).success).toBe(true);
+  });
+
+  it("aceita chave Pix e converte prazo para numero", () => {
+    const r = platformBillingSchema.safeParse({
+      pixKeyType: "PHONE",
+      pixKey: "(11) 98765-4321",
+      pixHolder: "Financy Pro",
+      bankName: "Nubank",
+      contactEmail: "cobranca@financy.com",
+      contactPhone: "(11) 98765-4321",
+      defaultAmount: "199.90",
+      defaultDueDays: "7",
+    });
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.defaultDueDays).toBe(7);
+  });
+
+  it("rejeita e-mail invalido e prazo fora do intervalo", () => {
+    expect(
+      platformBillingSchema.safeParse({ contactEmail: "x" }).success,
+    ).toBe(false);
+    expect(
+      platformBillingSchema.safeParse({ defaultDueDays: 999 }).success,
+    ).toBe(false);
+  });
+});
+
+describe("validation - edicao de lancamento", () => {
+  it("aceita objeto vazio (atualizacao parcial)", () => {
+    expect(updateTransactionSchema.safeParse({}).success).toBe(true);
+  });
+
+  it("aceita campos parciais validos", () => {
+    const r = updateTransactionSchema.safeParse({
+      type: "OUTFLOW",
+      amount: "150.50",
+      date: "2026-02-01",
+      bankAccountId: UUID,
+      categoryId: null,
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejeita tipo e valor invalidos", () => {
+    expect(updateTransactionSchema.safeParse({ type: "LATERAL" }).success).toBe(
+      false,
+    );
+    expect(updateTransactionSchema.safeParse({ amount: "lixo" }).success).toBe(
+      false,
+    );
+  });
+
+  it("rejeita conta com id invalido", () => {
+    expect(
+      updateTransactionSchema.safeParse({ bankAccountId: "nao-uuid" }).success,
+    ).toBe(false);
   });
 });

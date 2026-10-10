@@ -201,6 +201,7 @@ export function TitlesView({ direction }: { direction: "PAYABLE" | "RECEIVABLE" 
     installments: TitleRow["installments"];
   } | null>(null);
   const [settleForm, setSettleForm] = useState<Record<string, string>>({});
+  const [settleIds, setSettleIds] = useState<string[]>([]);
   const [settling, setSettling] = useState(false);
   const [settleError, setSettleError] = useState<string | null>(null);
 
@@ -210,8 +211,8 @@ export function TitlesView({ direction }: { direction: "PAYABLE" | "RECEIVABLE" 
       ? (Number(openInst.amount) - Number(openInst.paidAmount)).toFixed(2)
       : "0.00";
     setSettleState({ title, installments: title.installments.filter((i) => i.status !== "PAID") });
+    setSettleIds(openInst ? [openInst.id] : []);
     setSettleForm({
-      installmentId: openInst?.id ?? "",
       amount: remaining,
       interest: "0",
       fine: "0",
@@ -224,27 +225,64 @@ export function TitlesView({ direction }: { direction: "PAYABLE" | "RECEIVABLE" 
     setSettleError(null);
   }
 
+  /** Marca/desmarca uma parcela. Quando resta apenas uma selecionada, ajusta o valor. */
+  function toggleSettleInstallment(id: string) {
+    const next = settleIds.includes(id)
+      ? settleIds.filter((x) => x !== id)
+      : [...settleIds, id];
+    setSettleIds(next);
+    if (next.length === 1) {
+      const inst = settleState?.installments.find((i) => i.id === next[0]);
+      if (inst) {
+        setSettleForm((f) => ({
+          ...f,
+          amount: (Number(inst.amount) - Number(inst.paidAmount)).toFixed(2),
+        }));
+      }
+    }
+  }
+
   async function settle() {
-    if (!settleState) return;
+    if (!settleState || settleIds.length === 0) return;
     setSettling(true);
     setSettleError(null);
     try {
-      const payload = {
-        installmentId: settleForm.installmentId,
-        amount: Number(settleForm.amount),
-        interest: Number(settleForm.interest) || 0,
-        fine: Number(settleForm.fine) || 0,
-        discount: Number(settleForm.discount) || 0,
+      const targets = settleState.installments.filter((i) => settleIds.includes(i.id));
+      const base = {
         date: isoDate(settleForm.date),
         bankAccountId: settleForm.bankAccountId,
         method: settleForm.method,
         notes: settleForm.notes || undefined,
       };
-      await api.post(
-        `/api/${isReceivable ? "receivables" : "payables"}/${settleState.title.id}/settle`,
-        payload,
-      );
-      notify("Baixa registrada com sucesso.", "success");
+      const endpoint = `/api/${isReceivable ? "receivables" : "payables"}/${settleState.title.id}/settle`;
+
+      if (targets.length === 1) {
+        await api.post(endpoint, {
+          ...base,
+          installmentId: targets[0].id,
+          amount: Number(settleForm.amount),
+          interest: Number(settleForm.interest) || 0,
+          fine: Number(settleForm.fine) || 0,
+          discount: Number(settleForm.discount) || 0,
+        });
+        notify("Baixa registrada com sucesso.", "success");
+      } else {
+        for (const target of targets) {
+          const remaining = Number(
+            (Number(target.amount) - Number(target.paidAmount)).toFixed(2),
+          );
+          if (remaining <= 0) continue;
+          await api.post(endpoint, {
+            ...base,
+            installmentId: target.id,
+            amount: remaining,
+            interest: 0,
+            fine: 0,
+            discount: 0,
+          });
+        }
+        notify(`${targets.length} parcelas baixadas com sucesso.`, "success");
+      }
       setSettleState(null);
       await reload();
     } catch (err) {
@@ -299,6 +337,14 @@ export function TitlesView({ direction }: { direction: "PAYABLE" | "RECEIVABLE" 
         create: "receivables.create",
       }
     : { settle: "payables.settle", del: "payables.delete", create: "payables.create" };
+
+  const settleTargets =
+    settleState?.installments.filter((i) => settleIds.includes(i.id)) ?? [];
+  const settleIsMulti = settleTargets.length > 1;
+  const settleSelectedTotal = settleTargets.reduce(
+    (acc, i) => acc + (Number(i.amount) - Number(i.paidAmount)),
+    0,
+  );
 
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / 20));
   const summary = data?.summary;
@@ -605,18 +651,59 @@ export function TitlesView({ direction }: { direction: "PAYABLE" | "RECEIVABLE" 
         }
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Parcela" className="sm:col-span-2">
-            <Select value={settleForm.installmentId ?? ""} onChange={(e) => setSettleForm((f) => ({ ...f, installmentId: e.target.value }))}>
-              {settleState?.installments.map((i) => (
-                <option key={i.id} value={i.id}>
-                  Parcela {i.number} — {formatDate(i.dueDate)} — {formatCurrency(Number(i.amount) - Number(i.paidAmount))} restante
-                </option>
-              ))}
-            </Select>
+          <Field
+            label="Parcelas"
+            className="sm:col-span-2"
+            hint="Marque uma ou mais parcelas. Ao marcar várias, cada uma é baixada pelo valor restante."
+          >
+            <div className="space-y-2">
+              {settleState?.installments.map((i) => {
+                const remaining = Number(i.amount) - Number(i.paidAmount);
+                const checked = settleIds.includes(i.id);
+                return (
+                  <label
+                    key={i.id}
+                    className="flex cursor-pointer items-center gap-3 rounded-md border border-border p-2 text-sm"
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 shrink-0 accent-primary"
+                      checked={checked}
+                      onChange={() => toggleSettleInstallment(i.id)}
+                    />
+                    <span className="flex-1">
+                      Parcela {i.number} — vence {formatDate(i.dueDate)}
+                    </span>
+                    <span className="font-medium">{formatCurrency(remaining)}</span>
+                  </label>
+                );
+              })}
+            </div>
           </Field>
-          <Field label="Valor (principal)">
-            <Input type="number" step="0.01" min="0" required value={settleForm.amount ?? ""} onChange={(e) => setSettleForm((f) => ({ ...f, amount: e.target.value }))} />
-          </Field>
+          {settleIsMulti ? (
+            <Field
+              label="Valor total (principal)"
+              className="sm:col-span-2"
+              hint="Baixa pelo valor restante de cada parcela selecionada (sem juros/multa/desconto)."
+            >
+              <Input value={settleSelectedTotal.toFixed(2)} readOnly />
+            </Field>
+          ) : (
+            <>
+              <Field label="Valor (principal)">
+                <Input type="number" step="0.01" min="0" required value={settleForm.amount ?? ""} onChange={(e) => setSettleForm((f) => ({ ...f, amount: e.target.value }))} />
+              </Field>
+              <Field label="Juros">
+                <Input type="number" step="0.01" min="0" value={settleForm.interest ?? "0"} onChange={(e) => setSettleForm((f) => ({ ...f, interest: e.target.value }))} />
+              </Field>
+              <Field label="Multa">
+                <Input type="number" step="0.01" min="0" value={settleForm.fine ?? "0"} onChange={(e) => setSettleForm((f) => ({ ...f, fine: e.target.value }))} />
+              </Field>
+              <Field label="Desconto">
+                <Input type="number" step="0.01" min="0" value={settleForm.discount ?? "0"} onChange={(e) => setSettleForm((f) => ({ ...f, discount: e.target.value }))} />
+              </Field>
+            </>
+          )}
           <Field label="Conta / caixa">
             <Select required value={settleForm.bankAccountId ?? ""} onChange={(e) => setSettleForm((f) => ({ ...f, bankAccountId: e.target.value }))}>
               <option value="">Selecione…</option>
@@ -624,15 +711,6 @@ export function TitlesView({ direction }: { direction: "PAYABLE" | "RECEIVABLE" 
                 <option key={a.id} value={a.id}>{a.name}</option>
               ))}
             </Select>
-          </Field>
-          <Field label="Juros">
-            <Input type="number" step="0.01" min="0" value={settleForm.interest ?? "0"} onChange={(e) => setSettleForm((f) => ({ ...f, interest: e.target.value }))} />
-          </Field>
-          <Field label="Multa">
-            <Input type="number" step="0.01" min="0" value={settleForm.fine ?? "0"} onChange={(e) => setSettleForm((f) => ({ ...f, fine: e.target.value }))} />
-          </Field>
-          <Field label="Desconto">
-            <Input type="number" step="0.01" min="0" value={settleForm.discount ?? "0"} onChange={(e) => setSettleForm((f) => ({ ...f, discount: e.target.value }))} />
           </Field>
           <Field label="Data da baixa">
             <Input type="date" required value={settleForm.date ?? ""} onChange={(e) => setSettleForm((f) => ({ ...f, date: e.target.value }))} />

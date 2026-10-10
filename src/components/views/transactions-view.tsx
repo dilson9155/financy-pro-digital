@@ -108,13 +108,15 @@ export function TransactionsView() {
 
   const { data, loading, error, reload } = useApiQuery<ListResponse>(url);
 
-  // ---- modal de criacao ----
+  // ---- modal de criacao/edicao ----
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<TransactionRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
 
   function openCreate() {
+    setEditing(null);
     setForm({
       description: "",
       type: "INFLOW",
@@ -131,7 +133,30 @@ export function TransactionsView() {
     setOpen(true);
   }
 
-  async function create() {
+  function openEdit(t: TransactionRow) {
+    setEditing(t);
+    setForm({
+      description: t.description,
+      type: t.type,
+      amount: String(Number(t.amount)),
+      date: t.date.slice(0, 10),
+      competenceDate: t.competenceDate ? t.competenceDate.slice(0, 10) : "",
+      bankAccountId: t.bankAccount?.id ?? "",
+      categoryId: t.category?.id ?? "",
+      costCenterId: t.costCenter?.id ?? "",
+      accountPlanId: t.accountPlan?.id ?? "",
+      partnerId: t.partner?.id ?? "",
+    });
+    setFormError(null);
+    setOpen(true);
+  }
+
+  function closeForm() {
+    setOpen(false);
+    setEditing(null);
+  }
+
+  async function save() {
     setSaving(true);
     setFormError(null);
     try {
@@ -146,19 +171,51 @@ export function TransactionsView() {
           ? new Date(`${form.competenceDate}T12:00:00`).toISOString()
           : undefined,
         description: form.description,
-        categoryId: form.categoryId || undefined,
-        costCenterId: form.costCenterId || undefined,
-        accountPlanId: form.accountPlanId || undefined,
-        partnerId: form.partnerId || undefined,
+        categoryId: form.categoryId || null,
+        costCenterId: form.costCenterId || null,
+        accountPlanId: form.accountPlanId || null,
+        partnerId: form.partnerId || null,
       };
-      await api.post("/api/transactions", payload);
-      notify("Lançamento registrado com sucesso.", "success");
-      setOpen(false);
+      if (editing) {
+        await api.patch(`/api/transactions/${editing.id}`, payload);
+        notify("Lançamento atualizado com sucesso.", "success");
+      } else {
+        await api.post("/api/transactions", payload);
+        notify("Lançamento registrado com sucesso.", "success");
+      }
+      closeForm();
       await reload();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Erro ao criar.");
+      setFormError(
+        err instanceof Error
+          ? err.message
+          : editing
+            ? "Erro ao atualizar."
+            : "Erro ao criar.",
+      );
     } finally {
       setSaving(false);
+    }
+  }
+
+  // ---- modal de exclusao ----
+  const [deleteState, setDeleteState] = useState<TransactionRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  async function remove() {
+    if (!deleteState) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api.delete(`/api/transactions/${deleteState.id}`);
+      notify("Lançamento excluído com sucesso.", "success");
+      setDeleteState(null);
+      await reload();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Erro ao excluir.");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -352,20 +409,45 @@ export function TransactionsView() {
                     <TD align="right">
                       <div className="flex justify-end gap-1">
                         {t.status === "POSTED" &&
-                        REVERSIBLE_ORIGINS.has(t.origin) &&
-                        can(PERMISSIONS.TRANSACTIONS_REVERSE) ? (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-destructive"
-                            onClick={() => {
-                              setReverseState(t);
-                              setReverseReason("");
-                              setReverseError(null);
-                            }}
-                          >
-                            Estornar
-                          </Button>
+                        REVERSIBLE_ORIGINS.has(t.origin) ? (
+                          <>
+                            {can(PERMISSIONS.TRANSACTIONS_UPDATE) ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => openEdit(t)}
+                              >
+                                Editar
+                              </Button>
+                            ) : null}
+                            {can(PERMISSIONS.TRANSACTIONS_DELETE) ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive"
+                                onClick={() => {
+                                  setDeleteState(t);
+                                  setDeleteError(null);
+                                }}
+                              >
+                                Excluir
+                              </Button>
+                            ) : null}
+                            {can(PERMISSIONS.TRANSACTIONS_REVERSE) ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive"
+                                onClick={() => {
+                                  setReverseState(t);
+                                  setReverseReason("");
+                                  setReverseError(null);
+                                }}
+                              >
+                                Estornar
+                              </Button>
+                            ) : null}
+                          </>
                         ) : null}
                       </div>
                     </TD>
@@ -392,17 +474,21 @@ export function TransactionsView() {
         </div>
       </div>
 
-      {/* Modal criar lançamento */}
+      {/* Modal criar/editar lançamento */}
       <Modal
         open={open}
-        onClose={() => setOpen(false)}
-        title="Novo lançamento"
-        description="Movimento manual no ledger (entrada ou saída)."
+        onClose={closeForm}
+        title={editing ? "Editar lançamento" : "Novo lançamento"}
+        description={
+          editing
+            ? "Altere os dados do lançamento. O saldo da conta é ajustado automaticamente."
+            : "Movimento manual no ledger (entrada ou saída)."
+        }
         size="lg"
         footer={
           <>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
-            <Button onClick={create} disabled={saving}>
+            <Button variant="outline" onClick={closeForm}>Cancelar</Button>
+            <Button onClick={save} disabled={saving}>
               {saving ? <Spinner /> : null} Salvar
             </Button>
           </>
@@ -500,6 +586,34 @@ export function TransactionsView() {
         </Field>
         {reverseError ? (
           <p className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{reverseError}</p>
+        ) : null}
+      </Modal>
+
+      {/* Modal exclusão */}
+      <Modal
+        open={Boolean(deleteState)}
+        onClose={() => setDeleteState(null)}
+        title="Excluir lançamento"
+        description={
+          deleteState
+            ? `"${deleteState.description}" será removido definitivamente e o saldo da conta será ajustado.`
+            : undefined
+        }
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setDeleteState(null)}>Cancelar</Button>
+            <Button variant="destructive" onClick={remove} disabled={deleting}>
+              {deleting ? <Spinner /> : null} Excluir
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-muted-foreground">
+          Esta ação não pode ser desfeita. Se preferir manter o histórico, use{" "}
+          <strong>Estornar</strong> em vez de excluir.
+        </p>
+        {deleteError ? (
+          <p className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{deleteError}</p>
         ) : null}
       </Modal>
     </div>

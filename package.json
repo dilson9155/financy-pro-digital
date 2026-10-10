@@ -33,6 +33,8 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "jose": "^5.9.6",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "lucide-react": "^0.469.0",
     "next": "^15.1.4",
     "react": "^19.0.0",
