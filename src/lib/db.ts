@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaNeon } from "@prisma/adapter-neon";
 import { neonConfig } from "@neondatabase/serverless";
 import ws from "ws";
+import { normalizeDatabaseUrl } from "@/lib/env";
 
 // ---------------------------------------------------------------------------
 // Conexao com o banco via driver serverless do Neon (WebSocket sobre HTTPS/443).
@@ -23,9 +24,8 @@ neonConfig.webSocketConstructor = ws;
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 function createPrismaClient(): PrismaClient {
-  const adapter = new PrismaNeon({
-    connectionString: process.env.DATABASE_URL,
-  });
+  const connectionString = normalizeDatabaseUrl(process.env.DATABASE_URL);
+  const adapter = new PrismaNeon({ connectionString });
 
   return new PrismaClient({
     adapter,
