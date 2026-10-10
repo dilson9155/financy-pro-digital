@@ -409,6 +409,49 @@ describe("validation - cobrancas (invoices)", () => {
     ).toBe(true);
   });
 
+  it("aceita parcelamento/recorrencia com installments e intervalMonths", () => {
+    const r = invoiceCreateSchema.safeParse({
+      ...base,
+      installments: 12,
+      intervalMonths: 1,
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.installments).toBe(12);
+      expect(r.data.intervalMonths).toBe(1);
+    }
+  });
+
+  it("trata installments/intervalMonths ausentes como opcionais", () => {
+    const r = invoiceCreateSchema.safeParse(base);
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.installments).toBeUndefined();
+      expect(r.data.intervalMonths).toBeUndefined();
+    }
+  });
+
+  it("rejeita quantidade de parcelas fora do intervalo (1 a 60)", () => {
+    expect(
+      invoiceCreateSchema.safeParse({ ...base, installments: 0 }).success,
+    ).toBe(false);
+    expect(
+      invoiceCreateSchema.safeParse({ ...base, installments: 61 }).success,
+    ).toBe(false);
+    expect(
+      invoiceCreateSchema.safeParse({ ...base, installments: 2.5 }).success,
+    ).toBe(false);
+  });
+
+  it("rejeita intervalo entre parcelas fora do intervalo (1 a 12)", () => {
+    expect(
+      invoiceCreateSchema.safeParse({ ...base, intervalMonths: 0 }).success,
+    ).toBe(false);
+    expect(
+      invoiceCreateSchema.safeParse({ ...base, intervalMonths: 13 }).success,
+    ).toBe(false);
+  });
+
   it("invoiceUpdate aceita apenas o status", () => {
     expect(invoiceUpdateSchema.safeParse({ status: "PAID" }).success).toBe(true);
     expect(invoiceUpdateSchema.safeParse({ status: "INVALIDO" }).success).toBe(

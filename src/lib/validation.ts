@@ -353,6 +353,10 @@ export const invoiceCreateSchema = z
     pixKey: z.string().trim().max(200).optional().nullable(),
     boletoUrl: z.string().url("Link do boleto invalido").max(600).optional().nullable(),
     notes: z.string().max(1000).optional().nullable(),
+    /** Quantidade de parcelas a gerar (1 = cobranca unica). */
+    installments: z.coerce.number().int().min(1).max(60).optional(),
+    /** Intervalo entre parcelas, em meses (padrao 1). */
+    intervalMonths: z.coerce.number().int().min(1).max(12).optional(),
   })
   .superRefine(refineInvoicePix);
 

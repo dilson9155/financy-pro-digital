@@ -396,6 +396,70 @@ export async function createInvoice(
   });
 }
 
+/**
+ * Gera uma serie de cobrancas (parcelas/recorrencia) para a mesma empresa.
+ * Cada parcela vence em `dueDate + i * intervalMonths`, com o mesmo valor.
+ */
+export async function createInvoiceSeries(
+  actorId: string | null,
+  input: z.infer<typeof invoiceCreateSchema>,
+  count: number,
+  intervalMonths: number,
+) {
+  const company = await prisma.company.findUnique({
+    where: { id: input.companyId },
+    select: { id: true },
+  });
+  if (!company) throw notFound("Empresa nao encontrada.");
+
+  let method = input.method ?? null;
+  let pixKeyType: string | null = input.pixKeyType ?? null;
+  let pixKey: string | null = input.pixKey ?? null;
+
+  if (method === "PIX" && !pixKey) {
+    const billing = await getBillingSettings();
+    pixKey = billing.pixKey ?? null;
+    pixKeyType = pixKeyType ?? billing.pixKeyType ?? null;
+  }
+
+  const base = new Date(input.dueDate);
+
+  return prisma.$transaction(async (tx) => {
+    const created = [];
+    for (let i = 0; i < count; i += 1) {
+      const due = new Date(base);
+      due.setMonth(due.getMonth() + i * intervalMonths);
+
+      const invoice = await tx.invoice.create({
+        data: {
+          companyId: input.companyId,
+          description: `${input.description} (${i + 1}/${count})`,
+          amount: input.amount as unknown as Prisma.Decimal,
+          dueDate: due,
+          method: method as never,
+          pixKeyType: pixKeyType as never,
+          pixKey,
+          boletoUrl: input.boletoUrl ?? null,
+          notes: input.notes ?? null,
+          createdById: actorId,
+        },
+      });
+
+      await recordAudit(tx, {
+        companyId: input.companyId,
+        userId: actorId,
+        action: AUDIT_ACTIONS.CREATE,
+        entity: "Invoice",
+        entityId: invoice.id,
+        after: invoice,
+      });
+
+      created.push(invoice);
+    }
+    return created;
+  });
+}
+
 export async function updateInvoice(
   id: string,
   actorId: string | null,

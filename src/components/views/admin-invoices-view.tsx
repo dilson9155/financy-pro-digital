@@ -2,22 +2,28 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { Receipt } from "lucide-react";
 import { api, buildQuery } from "@/lib/client";
 import { useApiQuery } from "@/lib/hooks";
 import { useToast } from "@/components/toast";
 import { FilterBar, type FilterValues } from "@/components/filter-bar";
 import { BillingMessageModal } from "@/components/billing-message-modal";
+import { Modal } from "@/components/modal";
 import {
   Badge,
   Button,
   Card,
   CardContent,
   EmptyState,
+  Field,
+  Input,
   PageHeader,
+  Select,
   Spinner,
   Table,
   TBody,
   TD,
+  Textarea,
   TH,
   THead,
   TR,
@@ -27,6 +33,7 @@ import {
   formatDate,
   formatPixKey,
   INVOICE_STATUS_LABELS,
+  PIX_KEY_TYPE_LABELS,
   SETTLEMENT_METHOD_LABELS,
 } from "@/lib/format";
 
@@ -60,6 +67,17 @@ interface ListResponse {
   pageSize: number;
 }
 
+interface CompanyOption {
+  id: string;
+  name: string;
+  status: string;
+}
+
+interface CompanyListResponse {
+  items: CompanyOption[];
+  total: number;
+}
+
 interface BillingSettings {
   pixKeyType: string | null;
   pixKey: string | null;
@@ -86,6 +104,87 @@ export function AdminInvoicesView() {
   const [page, setPage] = useState(1);
   const [sendInvoice, setSendInvoice] = useState<InvoiceItem | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  // ---- nova cobrança ----
+  const [newOpen, setNewOpen] = useState(false);
+  const [newForm, setNewForm] = useState<Record<string, string>>({});
+  const [savingNew, setSavingNew] = useState(false);
+  const [newError, setNewError] = useState<string | null>(null);
+
+  const { data: companiesData } = useApiQuery<CompanyListResponse>(
+    "/api/admin/companies?pageSize=100",
+  );
+  const companies = companiesData?.items ?? [];
+
+  function todayPlusDays(days: number): string {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function openNewInvoice() {
+    const days = settings?.defaultDueDays ?? 5;
+    setNewForm({
+      companyId: "",
+      description: "",
+      amount:
+        settings?.defaultAmount != null ? String(settings.defaultAmount) : "",
+      dueDate: todayPlusDays(days),
+      method: "PIX",
+      pixKeyType: settings?.pixKeyType ?? "",
+      pixKey: settings?.pixKey ?? "",
+      boletoUrl: "",
+      notes: "",
+      installments: "1",
+      intervalMonths: "1",
+    });
+    setNewError(null);
+    setNewOpen(true);
+  }
+
+  async function createNewInvoice() {
+    setSavingNew(true);
+    setNewError(null);
+    try {
+      if (!newForm.companyId) throw new Error("Selecione a empresa.");
+      const isPix = newForm.method === "PIX";
+      if (isPix && !newForm.pixKeyType) {
+        throw new Error("Selecione o tipo da chave Pix.");
+      }
+      if (isPix && !(newForm.pixKey ?? "").trim()) {
+        throw new Error("Informe a chave Pix.");
+      }
+      const count = Math.max(1, Number(newForm.installments || 1));
+      const intervalMonths = Math.max(1, Number(newForm.intervalMonths || 1));
+      await api.post("/api/admin/invoices", {
+        companyId: newForm.companyId,
+        description: newForm.description,
+        amount: Number(newForm.amount || 0),
+        dueDate: newForm.dueDate,
+        method: newForm.method || null,
+        pixKeyType: isPix ? newForm.pixKeyType || null : null,
+        pixKey: isPix ? newForm.pixKey || null : null,
+        boletoUrl: newForm.boletoUrl || null,
+        notes: newForm.notes || null,
+        installments: count,
+        intervalMonths,
+      });
+      notify(
+        count > 1
+          ? `${count} cobranças geradas com sucesso.`
+          : "Cobrança criada.",
+        "success",
+      );
+      setNewOpen(false);
+      await reload();
+    } catch (err) {
+      setNewError(
+        err instanceof Error ? err.message : "Erro ao criar cobrança.",
+      );
+    } finally {
+      setSavingNew(false);
+    }
+  }
 
   const { data: settings } = useApiQuery<BillingSettings>("/api/admin/settings");
 
@@ -133,6 +232,11 @@ export function AdminInvoicesView() {
       <PageHeader
         title="Cobranças"
         description="Todas as faturas emitidas para as empresas da plataforma."
+        actions={
+          <Button onClick={openNewInvoice}>
+            <Receipt className="mr-1 h-4 w-4" /> Nova cobrança
+          </Button>
+        }
       />
 
       <FilterBar
@@ -305,6 +409,195 @@ export function AdminInvoicesView() {
           </div>
         </div>
       ) : null}
+
+      {/* Modal: nova cobrança (única ou parcelada/recorrente) */}
+      <Modal
+        open={newOpen}
+        onClose={() => setNewOpen(false)}
+        title="Nova cobrança"
+        size="lg"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setNewOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={createNewInvoice} disabled={savingNew}>
+              {savingNew ? <Spinner /> : null} Gerar
+            </Button>
+          </>
+        }
+      >
+        {newError ? (
+          <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+            {newError}
+          </p>
+        ) : null}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Empresa" className="sm:col-span-2">
+            <Select
+              value={newForm.companyId ?? ""}
+              onChange={(e) =>
+                setNewForm((f) => ({ ...f, companyId: e.target.value }))
+              }
+            >
+              <option value="">Selecione…</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Descrição" className="sm:col-span-2">
+            <Input
+              value={newForm.description ?? ""}
+              onChange={(e) =>
+                setNewForm((f) => ({ ...f, description: e.target.value }))
+              }
+              placeholder="Ex.: Mensalidade do plano"
+            />
+          </Field>
+          <Field label="Valor de cada parcela">
+            <Input
+              type="number"
+              step="0.01"
+              min="0"
+              value={newForm.amount ?? ""}
+              onChange={(e) =>
+                setNewForm((f) => ({ ...f, amount: e.target.value }))
+              }
+            />
+          </Field>
+          <Field label="Vencimento da 1ª parcela">
+            <Input
+              type="date"
+              value={newForm.dueDate ?? ""}
+              onChange={(e) =>
+                setNewForm((f) => ({ ...f, dueDate: e.target.value }))
+              }
+            />
+          </Field>
+          <Field
+            label="Nº de parcelas"
+            hint="1 = cobrança única. Ex.: 12 para gerar 12 cobranças."
+          >
+            <Input
+              type="number"
+              min="1"
+              max="60"
+              value={newForm.installments ?? "1"}
+              onChange={(e) =>
+                setNewForm((f) => ({ ...f, installments: e.target.value }))
+              }
+            />
+          </Field>
+          <Field label="Repetir a cada (meses)">
+            <Select
+              value={newForm.intervalMonths ?? "1"}
+              onChange={(e) =>
+                setNewForm((f) => ({ ...f, intervalMonths: e.target.value }))
+              }
+            >
+              <option value="1">1 mês (mensal)</option>
+              <option value="2">2 meses (bimestral)</option>
+              <option value="3">3 meses (trimestral)</option>
+              <option value="6">6 meses (semestral)</option>
+              <option value="12">12 meses (anual)</option>
+            </Select>
+          </Field>
+          <Field label="Forma de pagamento">
+            <Select
+              value={newForm.method ?? ""}
+              onChange={(e) =>
+                setNewForm((f) => ({ ...f, method: e.target.value }))
+              }
+            >
+              <option value="">Selecione…</option>
+              {Object.entries(SETTLEMENT_METHOD_LABELS).map(([v, label]) => (
+                <option key={v} value={v}>
+                  {label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {newForm.method === "PIX" ? (
+            <>
+              <Field label="Tipo de chave Pix">
+                <Select
+                  value={newForm.pixKeyType ?? ""}
+                  onChange={(e) =>
+                    setNewForm((f) => ({
+                      ...f,
+                      pixKeyType: e.target.value,
+                      pixKey: formatPixKey(e.target.value, f.pixKey ?? ""),
+                    }))
+                  }
+                >
+                  <option value="">Selecione…</option>
+                  {Object.entries(PIX_KEY_TYPE_LABELS).map(([v, label]) => (
+                    <option key={v} value={v}>
+                      {label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field
+                label="Chave Pix"
+                className="sm:col-span-2"
+                hint="Formatada automaticamente. Deixe vazio para usar a chave padrão da plataforma."
+              >
+                <Input
+                  value={newForm.pixKey ?? ""}
+                  onChange={(e) =>
+                    setNewForm((f) => ({
+                      ...f,
+                      pixKey: formatPixKey(f.pixKeyType, e.target.value),
+                    }))
+                  }
+                />
+              </Field>
+            </>
+          ) : null}
+          <Field
+            label="Link do boleto (opcional)"
+            className="sm:col-span-2"
+            hint="Cole aqui o link do boleto, se houver."
+          >
+            <Input
+              value={newForm.boletoUrl ?? ""}
+              onChange={(e) =>
+                setNewForm((f) => ({ ...f, boletoUrl: e.target.value }))
+              }
+              placeholder="https://…"
+            />
+          </Field>
+          <Field label="Observações" className="sm:col-span-2">
+            <Textarea
+              value={newForm.notes ?? ""}
+              onChange={(e) =>
+                setNewForm((f) => ({ ...f, notes: e.target.value }))
+              }
+            />
+          </Field>
+        </div>
+
+        {Number(newForm.installments || 1) > 1 &&
+        Number(newForm.amount || 0) > 0 ? (
+          <p className="mt-4 rounded-md bg-muted px-3 py-2 text-sm">
+            Serão geradas <strong>{Number(newForm.installments)}</strong>{" "}
+            cobranças de{" "}
+            <strong>{formatCurrency(Number(newForm.amount))}</strong> cada
+            (total{" "}
+            <strong>
+              {formatCurrency(
+                Number(newForm.amount) * Number(newForm.installments),
+              )}
+            </strong>
+            ), a cada {Number(newForm.intervalMonths || 1)} mês(es), a partir de{" "}
+            <strong>{formatDate(newForm.dueDate ?? "")}</strong>.
+          </p>
+        ) : null}
+      </Modal>
 
       <BillingMessageModal
         open={Boolean(sendInvoice)}
