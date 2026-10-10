@@ -32,7 +32,7 @@ export interface PostTransactionInput {
 
 interface LockedAccountRow {
   id: string;
-  current_balance: Prisma.Decimal;
+  currentBalance: Prisma.Decimal;
   version: number;
 }
 
@@ -48,9 +48,9 @@ export async function lockBankAccount(
   expectedVersion?: number,
 ): Promise<LockedAccountRow> {
   const rows = await tx.$queryRaw<LockedAccountRow[]>`
-    SELECT id, current_balance, version
-    FROM bank_accounts
-    WHERE id = ${bankAccountId}::uuid AND company_id = ${companyId}::uuid
+    SELECT id, "currentBalance", "version"
+    FROM "bank_accounts"
+    WHERE id = ${bankAccountId}::uuid AND "companyId" = ${companyId}::uuid
     FOR UPDATE
   `;
   const row = rows[0];
@@ -84,7 +84,7 @@ export async function postTransaction(
     input.expectedAccountVersion,
   );
 
-  const currentBalance = D(account.current_balance);
+  const currentBalance = D(account.currentBalance);
   const newBalance =
     input.type === "INFLOW"
       ? currentBalance.plus(amount)

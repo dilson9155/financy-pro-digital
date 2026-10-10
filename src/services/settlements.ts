@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import type { Settlement } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { D, isGreaterThan, round2, sum } from "@/lib/money";
+import { D, isGreaterThan, round2 } from "@/lib/money";
 import { badRequest, conflict, notFound } from "@/lib/http";
 import { AUDIT_ACTIONS, recordAudit } from "@/lib/audit";
 import { postTransaction, reverseTransaction } from "@/lib/ledger";
@@ -51,8 +51,8 @@ export async function settle(
   return prisma.$transaction(async (tx) => {
     // Bloqueia a parcela para evitar baixas concorrentes.
     await tx.$queryRaw`
-      SELECT id FROM title_installments
-      WHERE id = ${input.installmentId}::uuid AND company_id = ${companyId}::uuid
+      SELECT id FROM "title_installments"
+      WHERE id = ${input.installmentId}::uuid AND "companyId" = ${companyId}::uuid
       FOR UPDATE
     `;
 
