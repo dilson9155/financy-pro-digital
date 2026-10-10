@@ -1,0 +1,716 @@
+// =============================================================================
+// Financy Pro Digital - Schema Prisma (PostgreSQL / Neon)
+// =============================================================================
+// Modelagem multi-tenant (SaaS): todo dado operacional pertence a uma Company.
+// Valores monetarios usam Decimal(18,2). O saldo dos titulos/instalments e
+// mantido de forma DERIVADA e consistente dentro de transacoes SQL.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// -----------------------------------------------------------------------------
+// Enums
+// -----------------------------------------------------------------------------
+
+enum CompanyStatus {
+  ACTIVE
+  SUSPENDED
+  CANCELED
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  LOCKED
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+}
+
+enum AccountPlanType {
+  ASSET // Ativo
+  LIABILITY // Passivo
+  EQUITY // Patrimonio liquido
+  REVENUE // Receita
+  EXPENSE // Despesa
+}
+
+enum CategoryType {
+  INCOME // Receita
+  EXPENSE // Despesa
+}
+
+enum PartnerType {
+  CUSTOMER
+  SUPPLIER
+  BOTH
+}
+
+enum BankAccountType {
+  BANK
+  CASH
+  INVESTMENT
+  OTHER
+}
+
+enum TitleDirection {
+  PAYABLE // Conta a pagar
+  RECEIVABLE // Conta a receber
+}
+
+enum TitleStatus {
+  OPEN
+  PARTIAL
+  PAID
+  CANCELED
+  REVERSED
+}
+
+enum InstallmentStatus {
+  OPEN
+  PARTIAL
+  PAID
+  CANCELED
+}
+
+enum SettlementMethod {
+  CASH
+  PIX
+  BANK_TRANSFER
+  BOLETO
+  CARD
+  CHECK
+  OTHER
+}
+
+enum TransactionType {
+  INFLOW // Entrada na conta/caixa
+  OUTFLOW // Saida da conta/caixa
+}
+
+enum TransactionOrigin {
+  MANUAL
+  PAYABLE_SETTLEMENT
+  RECEIVABLE_SETTLEMENT
+  TRANSFER
+  ADJUSTMENT
+  OPENING_BALANCE
+  REVERSAL
+}
+
+enum TransactionStatus {
+  POSTED
+  REVERSED
+}
+
+enum TransferStatus {
+  PENDING
+  COMPLETED
+  CANCELED
+  REVERSED
+}
+
+enum ReconciliationStatus {
+  PENDING
+  MATCHED
+  IGNORED
+  ADJUSTED
+}
+
+enum BackupStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+// -----------------------------------------------------------------------------
+// Tenant, usuarios, RBAC
+// -----------------------------------------------------------------------------
+
+model Company {
+  id        String        @id @default(uuid()) @db.Uuid
+  name      String
+  legalName String?
+  document  String? // CNPJ/CPF
+  email     String?
+  phone     String?
+  address   String?
+  currency  String        @default("BRL")
+  timezone  String        @default("America/Sao_Paulo")
+  status    CompanyStatus @default(ACTIVE)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  memberships    Membership[]
+  roles          Role[]
+  accountPlans   AccountPlan[]
+  categories     Category[]
+  costCenters    CostCenter[]
+  partners       Partner[]
+  bankAccounts   BankAccount[]
+  titles         FinancialTitle[]
+  installments   TitleInstallment[]
+  settlements    Settlement[]
+  reversals      SettlementReversal[]
+  transactions   Transaction[]
+  transfers      Transfer[]
+  statements     BankStatement[]
+  statementLines BankStatementLine[]
+  reconciliations Reconciliation[]
+  auditLogs      AuditLog[]
+  settings       Setting[]
+  backups        Backup[]
+
+  @@index([status])
+  @@map("companies")
+}
+
+model User {
+  id                 String     @id @default(uuid()) @db.Uuid
+  name               String
+  email              String     @unique
+  passwordHash       String
+  status             UserStatus @default(ACTIVE)
+  isSuperAdmin       Boolean    @default(false)
+  lastLoginAt        DateTime?
+  failedLoginAttempts Int       @default(0)
+  lockedUntil        DateTime?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  memberships     Membership[]
+  sessions        UserSession[]
+  auditLogs       AuditLog[]
+  createdTitles   FinancialTitle[]     @relation("TitleCreatedBy")
+  createdSettlements Settlement[]      @relation("SettlementCreatedBy")
+  createdReversals   SettlementReversal[] @relation("ReversalCreatedBy")
+  createdTransactions Transaction[]    @relation("TransactionCreatedBy")
+  createdTransfers   Transfer[]        @relation("TransferCreatedBy")
+
+  @@index([status])
+  @@map("users")
+}
+
+model UserSession {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique
+  ip        String?
+  userAgent String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("user_sessions")
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  companyId   String   @db.Uuid
+  name        String
+  description String?
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  company     Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  permissions RolePermission[]
+  memberships Membership[]
+
+  @@unique([companyId, name])
+  @@map("roles")
+}
+
+model RolePermission {
+  id         String @id @default(uuid()) @db.Uuid
+  roleId     String @db.Uuid
+  permission String
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permission])
+  @@index([permission])
+  @@map("role_permissions")
+}
+
+model Membership {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @db.Uuid
+  companyId String           @db.Uuid
+  roleId    String           @db.Uuid
+  status    MembershipStatus @default(ACTIVE)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  role    Role    @relation(fields: [roleId], references: [id])
+
+  @@unique([userId, companyId])
+  @@index([companyId])
+  @@map("memberships")
+}
+
+// -----------------------------------------------------------------------------
+// Estruturas financeiras
+// -----------------------------------------------------------------------------
+
+model AccountPlan {
+  id           String          @id @default(uuid()) @db.Uuid
+  companyId    String          @db.Uuid
+  code         String
+  name         String
+  type         AccountPlanType
+  parentId     String?         @db.Uuid
+  isAnalytical Boolean         @default(true)
+  allowManual  Boolean         @default(true)
+  active       Boolean         @default(true)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  company    Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent     AccountPlan?   @relation("AccountPlanTree", fields: [parentId], references: [id])
+  children   AccountPlan[]  @relation("AccountPlanTree")
+  categories Category[]
+  titles     FinancialTitle[]
+  transactions Transaction[]
+  bankAccounts BankAccount[]
+
+  @@unique([companyId, code])
+  @@index([companyId, type])
+  @@index([parentId])
+  @@map("account_plans")
+}
+
+model Category {
+  id            String       @id @default(uuid()) @db.Uuid
+  companyId     String       @db.Uuid
+  name          String
+  type          CategoryType
+  parentId      String?      @db.Uuid
+  accountPlanId String?      @db.Uuid
+  active        Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent      Category?    @relation("CategoryTree", fields: [parentId], references: [id])
+  children    Category[]   @relation("CategoryTree")
+  accountPlan AccountPlan? @relation(fields: [accountPlanId], references: [id])
+  titles      FinancialTitle[]
+  transactions Transaction[]
+
+  @@unique([companyId, name, type])
+  @@index([companyId, type])
+  @@map("categories")
+}
+
+model CostCenter {
+  id        String    @id @default(uuid()) @db.Uuid
+  companyId String    @db.Uuid
+  code      String
+  name      String
+  parentId  String?   @db.Uuid
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent       CostCenter?  @relation("CostCenterTree", fields: [parentId], references: [id])
+  children     CostCenter[] @relation("CostCenterTree")
+  titles       FinancialTitle[]
+  transactions Transaction[]
+
+  @@unique([companyId, code])
+  @@index([parentId])
+  @@map("cost_centers")
+}
+
+model Partner {
+  id        String      @id @default(uuid()) @db.Uuid
+  companyId String      @db.Uuid
+  type      PartnerType @default(BOTH)
+  name      String
+  document  String?
+  email     String?
+  phone     String?
+  notes     String?
+  active    Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  company      Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  titles       FinancialTitle[]
+  transactions Transaction[]
+
+  @@index([companyId, type])
+  @@index([companyId, name])
+  @@map("partners")
+}
+
+model BankAccount {
+  id            String          @id @default(uuid()) @db.Uuid
+  companyId     String          @db.Uuid
+  name          String
+  type          BankAccountType
+  bankName      String?
+  bankCode      String?
+  agency        String?
+  accountNumber String?
+  accountPlanId String?         @db.Uuid
+  currency      String          @default("BRL")
+  initialBalance Decimal        @default(0) @db.Decimal(18, 2)
+  currentBalance Decimal        @default(0) @db.Decimal(18, 2)
+  active        Boolean         @default(true)
+  version       Int             @default(0) // controle de concorrencia otimista
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  company       Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  accountPlan   AccountPlan?        @relation(fields: [accountPlanId], references: [id])
+  installments  TitleInstallment[]
+  settlements   Settlement[]
+  transactions  Transaction[]
+  statements    BankStatement[]
+  statementLines BankStatementLine[]
+  transfersOut  Transfer[]          @relation("TransferFrom")
+  transfersIn   Transfer[]          @relation("TransferTo")
+
+  @@index([companyId, active])
+  @@map("bank_accounts")
+}
+
+// -----------------------------------------------------------------------------
+// Contas a pagar / receber (modelo unificado por direcao)
+// -----------------------------------------------------------------------------
+
+model FinancialTitle {
+  id             String         @id @default(uuid()) @db.Uuid
+  companyId      String         @db.Uuid
+  direction      TitleDirection
+  partnerId      String?        @db.Uuid
+  documentNumber String?
+  description    String
+  issueDate      DateTime
+  dueDate        DateTime
+  totalAmount    Decimal        @db.Decimal(18, 2)
+  settledAmount  Decimal        @default(0) @db.Decimal(18, 2)
+  status         TitleStatus    @default(OPEN)
+  categoryId     String?        @db.Uuid
+  costCenterId   String?        @db.Uuid
+  accountPlanId  String?        @db.Uuid
+  notes          String?
+  createdById    String?        @db.Uuid
+  canceledAt     DateTime?
+  cancelReason   String?
+  version        Int            @default(0)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  company      Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  partner      Partner?           @relation(fields: [partnerId], references: [id])
+  category     Category?          @relation(fields: [categoryId], references: [id])
+  costCenter   CostCenter?        @relation(fields: [costCenterId], references: [id])
+  accountPlan  AccountPlan?       @relation(fields: [accountPlanId], references: [id])
+  createdBy    User?              @relation("TitleCreatedBy", fields: [createdById], references: [id])
+  installments TitleInstallment[]
+  settlements  Settlement[]
+  transactions Transaction[]
+
+  @@index([companyId, direction, status])
+  @@index([companyId, dueDate])
+  @@index([partnerId])
+  @@map("financial_titles")
+}
+
+model TitleInstallment {
+  id            String            @id @default(uuid()) @db.Uuid
+  titleId       String            @db.Uuid
+  companyId     String            @db.Uuid
+  number        Int
+  dueDate       DateTime
+  amount        Decimal           @db.Decimal(18, 2)
+  paidAmount    Decimal           @default(0) @db.Decimal(18, 2)
+  status        InstallmentStatus @default(OPEN)
+  bankAccountId String?           @db.Uuid
+  version       Int               @default(0)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  title       FinancialTitle @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  company     Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  bankAccount BankAccount?   @relation(fields: [bankAccountId], references: [id])
+  settlements Settlement[]
+  transactions Transaction[]
+
+  @@unique([titleId, number])
+  @@index([companyId, status, dueDate])
+  @@map("title_installments")
+}
+
+model Settlement {
+  id            String           @id @default(uuid()) @db.Uuid
+  companyId     String           @db.Uuid
+  titleId       String           @db.Uuid
+  installmentId String           @db.Uuid
+  bankAccountId String           @db.Uuid
+  amount        Decimal          @db.Decimal(18, 2) // principal aplicado
+  interest      Decimal          @default(0) @db.Decimal(18, 2)
+  fine          Decimal          @default(0) @db.Decimal(18, 2)
+  discount      Decimal          @default(0) @db.Decimal(18, 2)
+  total         Decimal          @db.Decimal(18, 2) // caixa efetivamente movimentado
+  date          DateTime
+  method        SettlementMethod
+  notes         String?
+  transactionId String?          @unique @db.Uuid
+  createdById   String?          @db.Uuid
+  reversed      Boolean          @default(false)
+  createdAt     DateTime         @default(now())
+
+  company     Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  title       FinancialTitle @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  installment TitleInstallment @relation(fields: [installmentId], references: [id], onDelete: Cascade)
+  bankAccount BankAccount    @relation(fields: [bankAccountId], references: [id])
+  transaction Transaction?   @relation("SettlementTransaction", fields: [transactionId], references: [id])
+  createdBy   User?          @relation("SettlementCreatedBy", fields: [createdById], references: [id])
+  reversal    SettlementReversal?
+
+  @@index([companyId, date])
+  @@index([installmentId])
+  @@map("settlements")
+}
+
+model SettlementReversal {
+  id            String    @id @default(uuid()) @db.Uuid
+  companyId     String    @db.Uuid
+  settlementId  String    @unique @db.Uuid
+  reason        String
+  reversedById  String?   @db.Uuid
+  transactionId String?   @unique @db.Uuid // lancamento de contrapartida gerado
+  createdAt     DateTime  @default(now())
+
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  settlement  Settlement   @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  reversedBy  User?        @relation("ReversalCreatedBy", fields: [reversedById], references: [id])
+  transaction Transaction? @relation("ReversalTransaction", fields: [transactionId], references: [id])
+
+  @@index([companyId, createdAt])
+  @@map("settlement_reversals")
+}
+
+// -----------------------------------------------------------------------------
+// Movimentos (ledger de conta/caixa)
+// -----------------------------------------------------------------------------
+
+model Transaction {
+  id             String            @id @default(uuid()) @db.Uuid
+  companyId      String            @db.Uuid
+  type           TransactionType
+  origin         TransactionOrigin
+  status         TransactionStatus @default(POSTED)
+  amount         Decimal           @db.Decimal(18, 2)
+  balanceAfter   Decimal?          @db.Decimal(18, 2) // saldo da conta apos o lancamento
+  date           DateTime
+  competenceDate DateTime?
+  description    String
+  bankAccountId  String            @db.Uuid
+  categoryId     String?           @db.Uuid
+  costCenterId   String?           @db.Uuid
+  accountPlanId  String?           @db.Uuid
+  partnerId      String?           @db.Uuid
+  titleId        String?           @db.Uuid
+  installmentId  String?           @db.Uuid
+  settlementId   String?           @db.Uuid
+  transferId     String?           @db.Uuid
+  reversalOfId   String?           @unique @db.Uuid
+  createdById    String?           @db.Uuid
+  version        Int               @default(0)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  company     Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  bankAccount BankAccount         @relation(fields: [bankAccountId], references: [id])
+  category    Category?           @relation(fields: [categoryId], references: [id])
+  costCenter  CostCenter?         @relation(fields: [costCenterId], references: [id])
+  accountPlan AccountPlan?        @relation(fields: [accountPlanId], references: [id])
+  partner     Partner?            @relation(fields: [partnerId], references: [id])
+  title       FinancialTitle?     @relation(fields: [titleId], references: [id])
+  installment TitleInstallment?   @relation(fields: [installmentId], references: [id])
+  transfer    Transfer?           @relation("TransferTransactions", fields: [transferId], references: [id])
+  reversalOf  Transaction?        @relation("TransactionReversal", fields: [reversalOfId], references: [id])
+  reversedBy  Transaction?        @relation("TransactionReversal")
+  createdBy   User?               @relation("TransactionCreatedBy", fields: [createdById], references: [id])
+  settlement  Settlement?         @relation("SettlementTransaction")
+  reversalSettlement SettlementReversal? @relation("ReversalTransaction")
+
+  @@index([companyId, date])
+  @@index([companyId, bankAccountId, date])
+  @@index([companyId, origin])
+  @@index([titleId])
+  @@map("transactions")
+}
+
+model Transfer {
+  id                String         @id @default(uuid()) @db.Uuid
+  companyId         String         @db.Uuid
+  fromBankAccountId String         @db.Uuid
+  toBankAccountId   String         @db.Uuid
+  amount            Decimal        @db.Decimal(18, 2)
+  date              DateTime
+  description       String?
+  status            TransferStatus @default(COMPLETED)
+  outTransactionId  String?        @db.Uuid
+  inTransactionId   String?        @db.Uuid
+  createdById       String?        @db.Uuid
+  createdAt         DateTime       @default(now())
+
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fromBankAccount BankAccount  @relation("TransferFrom", fields: [fromBankAccountId], references: [id])
+  toBankAccount   BankAccount  @relation("TransferTo", fields: [toBankAccountId], references: [id])
+  createdBy       User?        @relation("TransferCreatedBy", fields: [createdById], references: [id])
+  transactions    Transaction[] @relation("TransferTransactions")
+
+  @@index([companyId, date])
+  @@map("transfers")
+}
+
+// -----------------------------------------------------------------------------
+// Conciliacao bancaria
+// -----------------------------------------------------------------------------
+
+model BankStatement {
+  id             String    @id @default(uuid()) @db.Uuid
+  companyId      String    @db.Uuid
+  bankAccountId  String    @db.Uuid
+  fileName       String?
+  format         String    @default("CSV")
+  periodStart    DateTime?
+  periodEnd      DateTime?
+  openingBalance Decimal?  @db.Decimal(18, 2)
+  closingBalance Decimal?  @db.Decimal(18, 2)
+  importedById   String?   @db.Uuid
+  createdAt      DateTime  @default(now())
+
+  company     Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  bankAccount BankAccount         @relation(fields: [bankAccountId], references: [id])
+  lines       BankStatementLine[]
+
+  @@index([companyId, bankAccountId])
+  @@map("bank_statements")
+}
+
+model BankStatementLine {
+  id                  String               @id @default(uuid()) @db.Uuid
+  statementId         String               @db.Uuid
+  companyId           String               @db.Uuid
+  bankAccountId       String               @db.Uuid
+  date                DateTime
+  description         String
+  amount              Decimal              @db.Decimal(18, 2)
+  type                TransactionType
+  externalId          String?
+  status              ReconciliationStatus @default(PENDING)
+  matchedTransactionId String?             @db.Uuid
+  matchConfidence     Int?
+  notes               String?
+  createdAt           DateTime             @default(now())
+
+  statement    BankStatement @relation(fields: [statementId], references: [id], onDelete: Cascade)
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  bankAccount  BankAccount   @relation(fields: [bankAccountId], references: [id])
+  reconciliations Reconciliation[]
+
+  @@index([companyId, status])
+  @@index([statementId])
+  @@map("bank_statement_lines")
+}
+
+model Reconciliation {
+  id            String    @id @default(uuid()) @db.Uuid
+  companyId     String    @db.Uuid
+  lineId        String    @db.Uuid
+  transactionId String?   @db.Uuid
+  matchedById   String?   @db.Uuid
+  createdAt     DateTime  @default(now())
+  undoneAt      DateTime?
+  undoneById    String?   @db.Uuid
+  notes         String?
+
+  company     Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  line        BankStatementLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, createdAt])
+  @@map("reconciliations")
+}
+
+// -----------------------------------------------------------------------------
+// Auditoria, configuracoes, backups
+// -----------------------------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  companyId  String?  @db.Uuid
+  userId     String?  @db.Uuid
+  action     String
+  entity     String
+  entityId   String?
+  before     Json?
+  after      Json?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}
+
+model Setting {
+  id        String   @id @default(uuid()) @db.Uuid
+  companyId String   @db.Uuid
+  key       String
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, key])
+  @@map("settings")
+}
+
+model Backup {
+  id            String       @id @default(uuid()) @db.Uuid
+  companyId     String       @db.Uuid
+  fileName      String
+  sizeBytes     Int          @default(0)
+  recordCount   Int          @default(0)
+  status        BackupStatus @default(PENDING)
+  error         String?
+  storagePath   String?
+  requestedById String?      @db.Uuid
+  createdAt     DateTime     @default(now())
+  completedAt   DateTime?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, createdAt])
+  @@map("backups")
+}

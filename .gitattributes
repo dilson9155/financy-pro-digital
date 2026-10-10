@@ -1,0 +1,12 @@
+# Normaliza quebras de linha para LF em arquivos de texto.
+* text=auto eol=lf
+
+# Artefatos binarios
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
