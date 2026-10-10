@@ -34,8 +34,10 @@ import {
   formatCurrency,
   formatDate,
   formatDateTime,
+  formatPixKey,
   INSTALLMENT_STATUS_LABELS,
   PARTNER_TYPE_LABELS,
+  PIX_KEY_TYPE_LABELS,
   SETTLEMENT_METHOD_LABELS,
   TITLE_STATUS_LABELS,
 } from "@/lib/format";
@@ -82,6 +84,9 @@ export interface TitleDetail {
   totalAmount: string;
   settledAmount: string;
   status: string;
+  paymentMethod: string | null;
+  pixKeyType: string | null;
+  pixKey: string | null;
   notes: string | null;
   cancelReason: string | null;
   createdAt: string;
@@ -147,7 +152,7 @@ export function TitleDetailView({
       discount: "0",
       date: new Date().toISOString().slice(0, 10),
       bankAccountId: accounts[0]?.id ?? "",
-      method: isReceivable ? "PIX" : "BANK_TRANSFER",
+      method: data.paymentMethod ?? (isReceivable ? "PIX" : "BANK_TRANSFER"),
       notes: "",
     });
     setSettleError(null);
@@ -379,6 +384,27 @@ export function TitleDetailView({
                 {data.accountPlan ? `${data.accountPlan.code} — ${data.accountPlan.name}` : "—"}
               </span>
             </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Forma de pagamento</span>
+              <span className="font-medium">
+                {data.paymentMethod
+                  ? SETTLEMENT_METHOD_LABELS[data.paymentMethod] ?? data.paymentMethod
+                  : "—"}
+              </span>
+            </div>
+            {data.paymentMethod === "PIX" && data.pixKey ? (
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground">
+                  Chave Pix
+                  {data.pixKeyType
+                    ? ` (${PIX_KEY_TYPE_LABELS[data.pixKeyType] ?? data.pixKeyType})`
+                    : ""}
+                </span>
+                <span className="break-all text-right font-medium">
+                  {formatPixKey(data.pixKeyType, data.pixKey)}
+                </span>
+              </div>
+            ) : null}
             {data.notes ? (
               <p className="mt-2 rounded-md bg-muted/50 p-2 text-xs">{data.notes}</p>
             ) : null}

@@ -31,7 +31,9 @@ import {
 import {
   formatCurrency,
   formatDate,
+  formatPixKey,
   INSTALLMENT_STATUS_LABELS,
+  PIX_KEY_TYPE_LABELS,
   SETTLEMENT_METHOD_LABELS,
   TITLE_STATUS_LABELS,
 } from "@/lib/format";
@@ -46,6 +48,9 @@ export interface TitleRow {
   totalAmount: string;
   settledAmount: string;
   status: string;
+  paymentMethod: string | null;
+  pixKeyType: string | null;
+  pixKey: string | null;
   partner: { id: string; name: string } | null;
   category: { id: string; name: string } | null;
   installments: {
@@ -130,6 +135,9 @@ export function TitlesView({ direction }: { direction: "PAYABLE" | "RECEIVABLE" 
       categoryId: "",
       costCenterId: "",
       accountPlanId: "",
+      paymentMethod: "",
+      pixKeyType: "",
+      pixKey: "",
       notes: "",
     });
     setInstallmentsCount(1);
@@ -148,6 +156,13 @@ export function TitlesView({ direction }: { direction: "PAYABLE" | "RECEIVABLE" 
       const dueDate = form.dueDate || form.issueDate;
       const total = Number(form.totalAmount);
       if (!total || total <= 0) throw new Error("Informe um valor válido.");
+      const isPix = form.paymentMethod === "PIX";
+      if (isPix && !form.pixKeyType) {
+        throw new Error("Selecione o tipo da chave Pix.");
+      }
+      if (isPix && !(form.pixKey ?? "").trim()) {
+        throw new Error("Informe a chave Pix.");
+      }
       const installments = Array.from({ length: installmentsCount }, (_, i) => {
         const d = new Date(`${dueDate}T12:00:00`);
         d.setMonth(d.getMonth() + i);
@@ -163,6 +178,9 @@ export function TitlesView({ direction }: { direction: "PAYABLE" | "RECEIVABLE" 
         categoryId: form.categoryId || undefined,
         costCenterId: form.costCenterId || undefined,
         accountPlanId: form.accountPlanId || undefined,
+        paymentMethod: form.paymentMethod || undefined,
+        pixKeyType: isPix ? form.pixKeyType || undefined : undefined,
+        pixKey: isPix ? form.pixKey || undefined : undefined,
         notes: form.notes || undefined,
         installments,
       };
@@ -200,7 +218,7 @@ export function TitlesView({ direction }: { direction: "PAYABLE" | "RECEIVABLE" 
       discount: "0",
       date: new Date().toISOString().slice(0, 10),
       bankAccountId: accounts[0]?.id ?? "",
-      method: isReceivable ? "PIX" : "BANK_TRANSFER",
+      method: title.paymentMethod ?? (isReceivable ? "PIX" : "BANK_TRANSFER"),
       notes: "",
     });
     setSettleError(null);
@@ -245,6 +263,33 @@ export function TitlesView({ direction }: { direction: "PAYABLE" | "RECEIVABLE" 
     } catch (err) {
       notify(err instanceof Error ? err.message : "Erro ao excluir.", "error");
     }
+  }
+
+  function pixPlaceholder(type: string): string {
+    switch (type) {
+      case "CPF_CNPJ":
+        return "000.000.000-00 ou 00.000.000/0000-00";
+      case "PHONE":
+        return "(00) 00000-0000";
+      case "EMAIL":
+        return "nome@exemplo.com";
+      case "RANDOM":
+        return "00000000-0000-0000-0000-000000000000";
+      default:
+        return "Selecione o tipo acima";
+    }
+  }
+
+  function changePixType(type: string) {
+    setForm((f) => ({
+      ...f,
+      pixKeyType: type,
+      pixKey: formatPixKey(type, f.pixKey ?? ""),
+    }));
+  }
+
+  function changePixKey(raw: string) {
+    setForm((f) => ({ ...f, pixKey: formatPixKey(f.pixKeyType, raw) }));
   }
 
   const perms = isReceivable
@@ -328,6 +373,7 @@ export function TitlesView({ direction }: { direction: "PAYABLE" | "RECEIVABLE" 
                   <TH align="right">Valor</TH>
                   <TH align="right">Baixado</TH>
                   <TH>Status</TH>
+                  <TH className="hidden lg:table-cell">Forma</TH>
                   <TH align="right">Ações</TH>
                 </TR>
               </THead>
@@ -372,6 +418,22 @@ export function TitlesView({ direction }: { direction: "PAYABLE" | "RECEIVABLE" 
                         <Badge tone={t.status === "OPEN" ? "blue" : t.status === "PARTIAL" ? "yellow" : t.status === "PAID" ? "green" : "gray"}>
                           {TITLE_STATUS_LABELS[t.status] ?? t.status}
                         </Badge>
+                      </TD>
+                      <TD className="hidden lg:table-cell">
+                        {t.paymentMethod ? (
+                          <div className="leading-tight">
+                            <span className="text-sm">
+                              {SETTLEMENT_METHOD_LABELS[t.paymentMethod] ?? t.paymentMethod}
+                            </span>
+                            {t.paymentMethod === "PIX" && t.pixKey ? (
+                              <p className="text-xs text-muted-foreground">
+                                {formatPixKey(t.pixKeyType, t.pixKey)}
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </TD>
                       <TD align="right">
                         <div className="flex justify-end gap-1">
@@ -459,6 +521,39 @@ export function TitlesView({ direction }: { direction: "PAYABLE" | "RECEIVABLE" 
           <Field label="Quantidade de parcelas" hint="O valor é rateado automaticamente.">
             <Input type="number" min={1} max={60} value={String(installmentsCount)} onChange={(e) => setInstallmentsCount(Math.max(1, Number(e.target.value) || 1))} />
           </Field>
+          <Field label="Forma de pagamento" hint="Se for PIX, informe a chave de destino.">
+            <Select value={form.paymentMethod ?? ""} onChange={(e) => setForm((f) => ({ ...f, paymentMethod: e.target.value }))}>
+              <option value="">Selecione…</option>
+              {Object.entries(SETTLEMENT_METHOD_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </Select>
+          </Field>
+          {form.paymentMethod === "PIX" ? (
+            <>
+              <Field label="Tipo de chave Pix">
+                <Select value={form.pixKeyType ?? ""} onChange={(e) => changePixType(e.target.value)}>
+                  <option value="">Selecione…</option>
+                  {Object.entries(PIX_KEY_TYPE_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </Select>
+              </Field>
+              <Field
+                label="Chave Pix"
+                className="sm:col-span-2"
+                hint="A chave é formatada automaticamente conforme o tipo escolhido."
+              >
+                <Input
+                  value={form.pixKey ?? ""}
+                  onChange={(e) => changePixKey(e.target.value)}
+                  inputMode={form.pixKeyType === "CPF_CNPJ" || form.pixKeyType === "PHONE" ? "numeric" : "text"}
+                  placeholder={pixPlaceholder(form.pixKeyType ?? "")}
+                  autoComplete="off"
+                />
+              </Field>
+            </>
+          ) : null}
           <Field label="Categoria">
             <Select value={form.categoryId ?? ""} onChange={(e) => setForm((f) => ({ ...f, categoryId: e.target.value }))}>
               <option value="">Selecione…</option>

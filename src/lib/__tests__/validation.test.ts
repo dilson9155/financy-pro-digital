@@ -112,6 +112,59 @@ describe("validation - titulos", () => {
   });
 });
 
+describe("validation - forma de pagamento do titulo", () => {
+  const base = {
+    direction: "PAYABLE",
+    description: "Fornecedor XYZ",
+    issueDate: "2026-01-05",
+    totalAmount: "1000.00",
+  };
+
+  it("aceita titulo sem forma de pagamento", () => {
+    expect(createTitleSchema.safeParse(base).success).toBe(true);
+  });
+
+  it("aceita dinheiro, cartao e boleto", () => {
+    for (const method of ["CASH", "CARD", "BOLETO"]) {
+      expect(createTitleSchema.safeParse({ ...base, paymentMethod: method }).success).toBe(
+        true,
+      );
+    }
+  });
+
+  it("exige tipo e chave quando a forma for PIX", () => {
+    expect(createTitleSchema.safeParse({ ...base, paymentMethod: "PIX" }).success).toBe(
+      false,
+    );
+  });
+
+  it("aceita PIX com tipo e chave", () => {
+    const r = createTitleSchema.safeParse({
+      ...base,
+      paymentMethod: "PIX",
+      pixKeyType: "CPF_CNPJ",
+      pixKey: "52998224725",
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejeita tipo de chave Pix desconhecido", () => {
+    const r = createTitleSchema.safeParse({
+      ...base,
+      paymentMethod: "PIX",
+      pixKeyType: "IBAN",
+      pixKey: "x",
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejeita forma de pagamento fora do enum", () => {
+    expect(
+      createTitleSchema.safeParse({ ...base, paymentMethod: "BITCOIN" }).success,
+    ).toBe(false);
+  });
+});
+
 describe("validation - baixa (settle)", () => {
   const valid = {
     installmentId: UUID,

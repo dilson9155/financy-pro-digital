@@ -16,6 +16,50 @@ const money = z.union([
 const dateInput = z.coerce.date();
 const uuid = z.string().uuid();
 
+export const settlementMethodEnum = z.enum([
+  "CASH",
+  "PIX",
+  "BANK_TRANSFER",
+  "BOLETO",
+  "CARD",
+  "CHECK",
+  "OTHER",
+]);
+
+export const pixKeyTypeEnum = z.enum(["CPF_CNPJ", "EMAIL", "PHONE", "RANDOM"]);
+
+type PixFields = {
+  paymentMethod?: string | null;
+  pixKeyType?: string | null;
+  pixKey?: string | null;
+};
+
+/** Exige o tipo e a chave quando a forma de pagamento informada for PIX. */
+function refinePix(data: PixFields, ctx: z.RefinementCtx): void {
+  if (data.paymentMethod !== "PIX") return;
+  if (!data.pixKeyType) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["pixKeyType"],
+      message: "Selecione o tipo da chave Pix.",
+    });
+  }
+  if (!data.pixKey || data.pixKey.trim() === "") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["pixKey"],
+      message: "Informe a chave Pix.",
+    });
+  }
+}
+
+/** Campos de forma de pagamento/Pix compartilhados entre criar e editar titulos. */
+const paymentFields = {
+  paymentMethod: settlementMethodEnum.optional().nullable(),
+  pixKeyType: pixKeyTypeEnum.optional().nullable(),
+  pixKey: z.string().trim().max(200).optional().nullable(),
+};
+
 export const titleDirectionEnum = z.enum(["PAYABLE", "RECEIVABLE"]);
 
 export const installmentInput = z.object({
@@ -23,32 +67,38 @@ export const installmentInput = z.object({
   amount: money.optional(),
 });
 
-export const createTitleSchema = z.object({
-  direction: titleDirectionEnum,
-  partnerId: uuid.optional().nullable(),
-  documentNumber: z.string().max(120).optional().nullable(),
-  description: z.string().trim().min(1, "Informe a descricao").max(500),
-  issueDate: dateInput,
-  totalAmount: money,
-  categoryId: uuid.optional().nullable(),
-  costCenterId: uuid.optional().nullable(),
-  accountPlanId: uuid.optional().nullable(),
-  notes: z.string().max(2000).optional().nullable(),
-  installments: z.array(installmentInput).min(1).max(360).optional(),
-});
+export const createTitleSchema = z
+  .object({
+    direction: titleDirectionEnum,
+    partnerId: uuid.optional().nullable(),
+    documentNumber: z.string().max(120).optional().nullable(),
+    description: z.string().trim().min(1, "Informe a descricao").max(500),
+    issueDate: dateInput,
+    totalAmount: money,
+    categoryId: uuid.optional().nullable(),
+    costCenterId: uuid.optional().nullable(),
+    accountPlanId: uuid.optional().nullable(),
+    ...paymentFields,
+    notes: z.string().max(2000).optional().nullable(),
+    installments: z.array(installmentInput).min(1).max(360).optional(),
+  })
+  .superRefine(refinePix);
 
 export type CreateTitleInput = z.infer<typeof createTitleSchema>;
 
-export const updateTitleSchema = z.object({
-  partnerId: uuid.optional().nullable(),
-  documentNumber: z.string().max(120).optional().nullable(),
-  description: z.string().min(1).max(500).optional(),
-  issueDate: dateInput.optional(),
-  categoryId: uuid.optional().nullable(),
-  costCenterId: uuid.optional().nullable(),
-  accountPlanId: uuid.optional().nullable(),
-  notes: z.string().max(2000).optional().nullable(),
-});
+export const updateTitleSchema = z
+  .object({
+    partnerId: uuid.optional().nullable(),
+    documentNumber: z.string().max(120).optional().nullable(),
+    description: z.string().min(1).max(500).optional(),
+    issueDate: dateInput.optional(),
+    categoryId: uuid.optional().nullable(),
+    costCenterId: uuid.optional().nullable(),
+    accountPlanId: uuid.optional().nullable(),
+    ...paymentFields,
+    notes: z.string().max(2000).optional().nullable(),
+  })
+  .superRefine(refinePix);
 
 export const cancelTitleSchema = z.object({
   reason: z.string().min(3, "Informe o motivo").max(500),
@@ -63,15 +113,7 @@ export const settleSchema = z.object({
   date: dateInput,
   competenceDate: dateInput.optional(),
   bankAccountId: uuid,
-  method: z.enum([
-    "CASH",
-    "PIX",
-    "BANK_TRANSFER",
-    "BOLETO",
-    "CARD",
-    "CHECK",
-    "OTHER",
-  ]),
+  method: settlementMethodEnum,
   notes: z.string().max(1000).optional().nullable(),
 });
 

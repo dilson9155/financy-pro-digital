@@ -91,6 +91,7 @@ export async function createTitle(
   );
 
   return prisma.$transaction(async (tx) => {
+    const isPix = input.paymentMethod === "PIX";
     const title = await tx.financialTitle.create({
       data: {
         companyId,
@@ -104,6 +105,9 @@ export async function createTitle(
         categoryId: input.categoryId ?? null,
         costCenterId: input.costCenterId ?? null,
         accountPlanId: input.accountPlanId ?? null,
+        paymentMethod: input.paymentMethod ?? null,
+        pixKeyType: isPix ? (input.pixKeyType ?? null) : null,
+        pixKey: isPix ? (input.pixKey ?? null) : null,
         notes: input.notes ?? null,
         createdById: userId,
         installments: {
@@ -149,6 +153,12 @@ export async function updateTitle(
       throw conflict("Titulo cancelado/estornado nao pode ser editado.");
     }
 
+    const method =
+      input.paymentMethod === undefined
+        ? before.paymentMethod
+        : input.paymentMethod;
+    const isPix = method === "PIX";
+
     const updated = await tx.financialTitle.update({
       where: { id: titleId },
       data: {
@@ -169,6 +179,17 @@ export async function updateTitle(
           input.accountPlanId === undefined
             ? before.accountPlanId
             : input.accountPlanId,
+        paymentMethod: method,
+        pixKeyType: isPix
+          ? input.pixKeyType === undefined
+            ? before.pixKeyType
+            : input.pixKeyType
+          : null,
+        pixKey: isPix
+          ? input.pixKey === undefined
+            ? before.pixKey
+            : input.pixKey
+          : null,
         notes: input.notes === undefined ? before.notes : input.notes,
         version: { increment: 1 },
       },

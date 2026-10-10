@@ -94,6 +94,14 @@ enum SettlementMethod {
   OTHER
 }
 
+// Tipo da chave Pix informada no cadastro do titulo (quando a forma e PIX).
+enum PixKeyType {
+  CPF_CNPJ // CPF ou CNPJ do titular
+  EMAIL // E-mail
+  PHONE // Telefone/celular
+  RANDOM // Chave aleatoria (EVP)
+}
+
 enum TransactionType {
   INFLOW // Entrada na conta/caixa
   OUTFLOW // Saida da conta/caixa
@@ -414,6 +422,10 @@ model FinancialTitle {
   categoryId     String?        @db.Uuid
   costCenterId   String?        @db.Uuid
   accountPlanId  String?        @db.Uuid
+  // Forma de pagamento prevista no cadastro e, quando PIX, a chave de destino.
+  paymentMethod  SettlementMethod?
+  pixKeyType     PixKeyType?
+  pixKey         String?
   notes          String?
   createdById    String?        @db.Uuid
   canceledAt     DateTime?
