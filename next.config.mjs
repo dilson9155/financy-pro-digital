@@ -4,6 +4,14 @@ const nextConfig = {
   output: "standalone",
   reactStrictMode: true,
   poweredByHeader: false,
+  // O driver do Neon e o pacote `ws` nao devem ser empacotados pelo webpack:
+  // carregamos direto do node_modules em runtime (evita erros de bundling do
+  // `ws` e de modulos nativos opcionais).
+  serverExternalPackages: [
+    "@prisma/adapter-neon",
+    "@neondatabase/serverless",
+    "ws",
+  ],
   experimental: {
     // Mantem a API enxuta em ambientes serverless/VPS.
     serverActions: {

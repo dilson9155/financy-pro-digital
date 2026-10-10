@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +40,6 @@ export async function GET(req: NextRequest) {
     dbUrlLength: dbUrl.length,
   };
 
-  const prisma = new PrismaClient({ log: ["error"] });
   try {
     const rows = await prisma.$queryRawUnsafe<Array<{ now: Date }>>(
       "SELECT now() as now",
@@ -54,8 +53,6 @@ export async function GET(req: NextRequest) {
     info.dbErrorMessage = String((e as Error)?.message ?? e);
     const code = (e as { code?: string })?.code;
     if (code) info.dbErrorCode = code;
-  } finally {
-    await prisma.$disconnect().catch(() => {});
   }
 
   return Response.json(info);
