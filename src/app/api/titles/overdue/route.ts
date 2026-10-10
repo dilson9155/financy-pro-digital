@@ -1,15 +1,21 @@
+import type { NextRequest } from "next/server";
 import { jsonOk, route } from "@/lib/http";
-import { requireApiAuth } from "@/lib/api";
-import { scanOverdueTitles } from "@/services/overdue";
+import { requireApiAuth, searchParams } from "@/lib/api";
+import { scanOverdueTitles, type OverdueDirection } from "@/services/overdue";
 
 export const dynamic = "force-dynamic";
 
 /**
  * Varredura de titulos vencidos (em aberto/parcial e vencimento < hoje),
  * incluindo contas a pagar e a receber, com breakdown por direcao e por
- * faixa de atraso.
+ * faixa de atraso. O parametro `direction` (ALL | PAYABLE | RECEIVABLE)
+ * permite filtrar a lista e o resumo.
  */
-export const GET = route(async () => {
+export const GET = route(async (req: NextRequest) => {
   const ctx = await requireApiAuth();
-  return jsonOk(await scanOverdueTitles(ctx.companyId));
+  const sp = searchParams(req);
+  const raw = String(sp.direction ?? "ALL").toUpperCase();
+  const direction: OverdueDirection =
+    raw === "RECEIVABLE" || raw === "PAYABLE" ? raw : "ALL";
+  return jsonOk(await scanOverdueTitles(ctx.companyId, direction));
 });

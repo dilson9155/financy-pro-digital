@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useApiQuery } from "@/lib/hooks";
+import { buildQuery } from "@/lib/client";
 import { useToast } from "@/components/toast";
 import {
   Badge,
@@ -10,7 +11,9 @@ import {
   Card,
   CardContent,
   EmptyState,
+  Field,
   PageHeader,
+  Select,
   Spinner,
   StatCard,
 } from "@/components/ui";
@@ -19,7 +22,9 @@ import {
   formatDate,
   TITLE_STATUS_LABELS,
 } from "@/lib/format";
-import { RefreshCw } from "lucide-react";
+import { ChevronRight, RefreshCw } from "lucide-react";
+
+type Direction = "ALL" | "RECEIVABLE" | "PAYABLE";
 
 interface OverdueItem {
   id: string;
@@ -81,11 +86,11 @@ const BUCKET_BADGE_TONES: Record<OverdueItem["bucket"], "blue" | "yellow" | "red
 
 export function OverdueTitlesView() {
   const { notify } = useToast();
+  const [direction, setDirection] = useState<Direction>("ALL");
   const [scanning, setScanning] = useState(false);
 
-  const { data, loading, error, reload } = useApiQuery<ScanResponse>(
-    "/api/titles/overdue",
-  );
+  const url = `/api/titles/overdue${buildQuery({ direction })}`;
+  const { data, loading, error, reload } = useApiQuery<ScanResponse>(url);
 
   async function runScan() {
     setScanning(true);
@@ -119,10 +124,24 @@ export function OverdueTitlesView() {
         }
       />
 
-      <p className="text-xs text-muted-foreground">
-        Inclui contas a pagar e a receber. Mostra apenas títulos não
-        liquidados cujo vencimento é anterior a hoje.
-      </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="w-full sm:max-w-xs">
+          <Field label="Filtrar por direção">
+            <Select
+              value={direction}
+              onChange={(e) => setDirection(e.target.value as Direction)}
+            >
+              <option value="ALL">Todos (pagar e receber)</option>
+              <option value="RECEIVABLE">A receber</option>
+              <option value="PAYABLE">A pagar</option>
+            </Select>
+          </Field>
+        </div>
+        <p className="text-xs text-muted-foreground sm:max-w-md sm:pb-2 sm:text-right">
+          Apenas títulos não liquidados com vencimento anterior a hoje. Clique
+          em um título para abrir a tela de baixa/pagamento.
+        </p>
+      </div>
 
       {loading && !data ? (
         <div className="flex justify-center py-16">
@@ -141,7 +160,13 @@ export function OverdueTitlesView() {
       ) : !data || data.items.length === 0 ? (
         <EmptyState
           title="Nenhum título vencido"
-          description="Ótima notícia: não há títulos em aberto (pagar ou receber) com vencimento anterior a hoje."
+          description={
+            direction === "ALL"
+              ? "Ótima notícia: não há títulos em aberto (pagar ou receber) com vencimento anterior a hoje."
+              : direction === "RECEIVABLE"
+                ? "Não há contas a receber vencidas no momento."
+                : "Não há contas a pagar vencidas no momento."
+          }
         />
       ) : (
         <>
@@ -181,57 +206,63 @@ export function OverdueTitlesView() {
           <Card>
             <CardContent className="pt-4">
               <div className="space-y-2">
-                {data.items.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Link
-                          href={`/contas-a-${
-                            item.direction === "RECEIVABLE" ? "receber" : "pagar"
-                          }/${item.id}`}
-                          className="font-medium hover:underline"
-                        >
-                          {item.description}
-                        </Link>
-                        <Badge tone="gray" className="text-[10px]">
-                          {item.direction === "RECEIVABLE"
-                            ? "A receber"
-                            : "A pagar"}
-                        </Badge>
-                        {item.status === "PARTIAL" ? (
-                          <Badge tone="yellow" className="text-[10px]">
-                            {TITLE_STATUS_LABELS.PARTIAL}
+                {data.items.map((item) => {
+                  const baseHref =
+                    item.direction === "RECEIVABLE"
+                      ? `/contas-a-receber/${item.id}`
+                      : `/contas-a-pagar/${item.id}`;
+                  return (
+                    <Link
+                      key={item.id}
+                      href={`${baseHref}?settle=1`}
+                      className="flex flex-col gap-2 rounded-md border p-3 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium">
+                            {item.description}
+                          </span>
+                          <Badge tone="gray" className="text-[10px]">
+                            {item.direction === "RECEIVABLE"
+                              ? "A receber"
+                              : "A pagar"}
                           </Badge>
-                        ) : null}
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {item.partner ? (
-                          <>{item.partner.name} · </>
-                        ) : null}
-                        Venceu em {formatDate(item.dueDate)}
-                        {item.documentNumber
-                          ? ` · Doc ${item.documentNumber}`
-                          : ""}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3 sm:flex-row-reverse">
-                      <div className="text-right">
-                        <p className="text-base font-bold">
-                          {formatCurrency(item.openAmount)}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground">
-                          restante de {formatCurrency(item.totalAmount)}
+                          {item.status === "PARTIAL" ? (
+                            <Badge tone="yellow" className="text-[10px]">
+                              {TITLE_STATUS_LABELS.PARTIAL}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {item.partner ? (
+                            <>{item.partner.name} · </>
+                          ) : null}
+                          Venceu em {formatDate(item.dueDate)}
+                          {item.documentNumber
+                            ? ` · Doc ${item.documentNumber}`
+                            : ""}
                         </p>
                       </div>
-                      <Badge tone={BUCKET_BADGE_TONES[item.bucket]}>
-                        {item.daysOverdue} dia(s)
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
+                      <div className="flex items-center gap-3 sm:flex-row-reverse">
+                        <div className="text-right">
+                          <p className="text-base font-bold">
+                            {formatCurrency(item.openAmount)}
+                          </p>
+                          <p className="text-[11px] text-muted-foreground">
+                            restante de {formatCurrency(item.totalAmount)}
+                          </p>
+                        </div>
+                        <Badge tone={BUCKET_BADGE_TONES[item.bucket]}>
+                          {item.daysOverdue} dia(s)
+                        </Badge>
+                        <ChevronRight
+                          className="hidden h-4 w-4 text-muted-foreground sm:block"
+                          aria-hidden
+                        />
+                      </div>
+                    </Link>
+                  );
+                })}
               </div>
             </CardContent>
           </Card>

@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { D, isGreaterThan, round2 } from "@/lib/money";
 
+export type OverdueDirection = "ALL" | "RECEIVABLE" | "PAYABLE";
 export type OverdueBucket = "0-30" | "31-60" | "61-90" | "90+";
 
 export interface OverdueItem {
@@ -74,11 +75,14 @@ const BUCKET_LABELS: Record<OverdueBucket, string> = {
  * a lista ordenada, o resumo por faixa de atraso, o breakdown por direcao
  * e o timestamp da varredura.
  *
+ * Se `direction` for informado, filtra para "PAYABLE" ou "RECEIVABLE".
+ *
  * O "vencido" e derivado (status permanece OPEN/PARTIAL; a classificacao
  * "vencido" vem do cruzamento status + data de vencimento).
  */
 export async function scanOverdueTitles(
   companyId: string,
+  direction: OverdueDirection = "ALL",
 ): Promise<OverdueScanResult> {
   const today = startOfToday();
 
@@ -87,6 +91,9 @@ export async function scanOverdueTitles(
     status: { in: ["OPEN", "PARTIAL"] },
     dueDate: { lt: today },
   };
+  if (direction === "RECEIVABLE" || direction === "PAYABLE") {
+    where.direction = direction;
+  }
 
   const rows = await prisma.financialTitle.findMany({
     where,

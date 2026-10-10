@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/client";
 import { useApiQuery } from "@/lib/hooks";
 import { useCan } from "@/components/session-context";
@@ -129,6 +129,20 @@ export function TitleDetailView({
   const { data, loading, error, reload } = useApiQuery<TitleDetail>(
     `/api/${module}/${titleId}`,
   );
+
+  // Abre a tela de baixa/pagamento direto quando vem de links como
+  // /contas-a-pagar/[id]?settle=1 (ex.: modulo "Titulos Vencidos").
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    if (!data) return;
+    if (searchParams.get("settle") !== "1") return;
+    openSettle();
+    // remove o parametro para nao reabrir em refresh
+    const url = new URL(window.location.href);
+    url.searchParams.delete("settle");
+    router.replace(url.pathname + (url.search ? url.search : ""));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, searchParams]);
 
   // ---- baixa ----
   const [settleOpen, setSettleOpen] = useState(false);
