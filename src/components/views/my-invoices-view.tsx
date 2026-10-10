@@ -46,6 +46,7 @@ interface PaymentInfo {
   paymentInstructions: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
+  qrCodeUrl: string | null;
 }
 
 interface Response {
@@ -122,24 +123,43 @@ export function MyInvoicesView() {
             />
           </div>
 
-          {payment?.pixKey ? (
+          {payment?.pixKey || payment?.qrCodeUrl ? (
             <Card>
-              <CardContent className="flex flex-col gap-1 pt-4 text-sm">
-                <p className="font-medium">Como pagar</p>
-                <p className="text-muted-foreground">
-                  PIX{" "}
-                  {payment.pixKeyType
-                    ? `(${PIX_KEY_TYPE_LABELS[payment.pixKeyType] ?? payment.pixKeyType})`
-                    : ""}
-                  : {formatPixKey(payment.pixKeyType, payment.pixKey)}
-                  {payment.pixHolder ? ` · Titular: ${payment.pixHolder}` : ""}
-                  {payment.bankName ? ` · Banco: ${payment.bankName}` : ""}
-                </p>
-                {payment.paymentInstructions ? (
-                  <p className="text-muted-foreground">
-                    {payment.paymentInstructions}
-                  </p>
+              <CardContent className="flex flex-col gap-3 pt-4 text-sm sm:flex-row sm:items-start sm:gap-5">
+                {payment.qrCodeUrl ? (
+                  <div className="flex shrink-0 flex-col items-center gap-1">
+                    <div className="flex h-44 w-44 items-center justify-center overflow-hidden rounded-md border bg-white p-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={payment.qrCodeUrl}
+                        alt="QR Code Pix"
+                        className="h-full w-full object-contain"
+                      />
+                    </div>
+                    <span className="text-[11px] text-muted-foreground">
+                      Leia com o app do banco
+                    </span>
+                  </div>
                 ) : null}
+                <div className="flex flex-1 flex-col gap-1">
+                  <p className="font-medium">Como pagar</p>
+                  {payment.pixKey ? (
+                    <p className="text-muted-foreground">
+                      PIX{" "}
+                      {payment.pixKeyType
+                        ? `(${PIX_KEY_TYPE_LABELS[payment.pixKeyType] ?? payment.pixKeyType})`
+                        : ""}
+                      : {formatPixKey(payment.pixKeyType, payment.pixKey)}
+                      {payment.pixHolder ? ` · Titular: ${payment.pixHolder}` : ""}
+                      {payment.bankName ? ` · Banco: ${payment.bankName}` : ""}
+                    </p>
+                  ) : null}
+                  {payment.paymentInstructions ? (
+                    <p className="text-muted-foreground">
+                      {payment.paymentInstructions}
+                    </p>
+                  ) : null}
+                </div>
               </CardContent>
             </Card>
           ) : null}
@@ -219,6 +239,22 @@ export function MyInvoicesView() {
                 Forma de pagamento:{" "}
                 {SETTLEMENT_METHOD_LABELS[selected.method] ?? selected.method}
               </p>
+            ) : null}
+
+            {payment?.qrCodeUrl ? (
+              <div className="flex flex-col items-center gap-1 rounded-md border p-3">
+                <div className="flex h-48 w-48 items-center justify-center overflow-hidden rounded-md bg-white p-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={payment.qrCodeUrl}
+                    alt="QR Code Pix"
+                    className="h-full w-full object-contain"
+                  />
+                </div>
+                <span className="text-[11px] text-muted-foreground">
+                  Abra o app do banco e leia o QR Code para pagar
+                </span>
+              </div>
             ) : null}
 
             {payKey ? (

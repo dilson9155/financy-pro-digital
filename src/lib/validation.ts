@@ -384,6 +384,8 @@ export const platformBillingSchema = z.object({
   contactPhone: z.string().trim().max(40).optional().nullable(),
   defaultAmount: money.optional(),
   defaultDueDays: z.coerce.number().int().min(0).max(365).optional(),
+  /** Foto do QR Code para pagamento (data URL PNG/JPEG). */
+  qrCodeUrl: imageDataUrl.optional().nullable(),
 });
 
 /** Marcar notificacoes como lidas (por ids ou todas). */

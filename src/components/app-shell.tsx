@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  AlertTriangle,
   ArrowLeftRight,
   BarChart3,
   Building2,
@@ -111,6 +112,13 @@ const NAV: { group: string; items: NavItem[] }[] = [
         label: "Fluxo de caixa",
         icon: Wallet,
         permission: "cash_flow.view",
+      },
+      {
+        href: "/titulos-vencidos",
+        label: "Títulos vencidos",
+        icon: AlertTriangle,
+        permission: "",
+        alwaysShow: true,
       },
       {
         href: "/relatorios",

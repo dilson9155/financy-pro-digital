@@ -545,6 +545,7 @@ export interface BillingSettings {
   contactPhone: string | null;
   defaultAmount: number | null;
   defaultDueDays: number | null;
+  qrCodeUrl: string | null;
 }
 
 export async function getBillingSettings(): Promise<BillingSettings> {
@@ -565,6 +566,7 @@ function normalizeBilling(v: Record<string, unknown>): BillingSettings {
     contactPhone: (v.contactPhone as string) ?? null,
     defaultAmount: (v.defaultAmount as number) ?? null,
     defaultDueDays: (v.defaultDueDays as number) ?? null,
+    qrCodeUrl: (v.qrCodeUrl as string) ?? null,
   };
 }
 

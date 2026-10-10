@@ -51,6 +51,7 @@ export async function listCompanyInvoices(companyId: string) {
       paymentInstructions: settings.paymentInstructions,
       contactEmail: settings.contactEmail,
       contactPhone: settings.contactPhone,
+      qrCodeUrl: settings.qrCodeUrl,
     },
   };
 }

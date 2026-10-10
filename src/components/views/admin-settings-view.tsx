@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api } from "@/lib/client";
 import { useApiQuery } from "@/lib/hooks";
 import { useToast } from "@/components/toast";
+import { fileToDataUrl } from "@/lib/image";
 import {
   Button,
   Card,
@@ -35,6 +36,7 @@ interface BillingSettings {
   contactPhone: string | null;
   defaultAmount: number | null;
   defaultDueDays: number | null;
+  qrCodeUrl: string | null;
 }
 
 type FormState = Record<string, string>;
@@ -47,6 +49,8 @@ export function AdminSettingsView() {
   const [form, setForm] = useState<FormState>({});
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   function hydrate(d: BillingSettings) {
     setForm({
@@ -59,7 +63,28 @@ export function AdminSettingsView() {
       paymentInstructions: d.paymentInstructions ?? "",
       defaultAmount: d.defaultAmount != null ? String(d.defaultAmount) : "",
       defaultDueDays: d.defaultDueDays != null ? String(d.defaultDueDays) : "",
+      qrCodeUrl: d.qrCodeUrl ?? "",
     });
+  }
+
+  async function onPickQr(file: File | undefined) {
+    if (!file) return;
+    setUploading(true);
+    setFormError(null);
+    try {
+      const url = await fileToDataUrl(file, {
+        maxDimension: 700,
+        format: "image/png",
+      });
+      setForm((f) => ({ ...f, qrCodeUrl: url }));
+    } catch (err) {
+      setFormError(
+        err instanceof Error ? err.message : "Falha ao processar a imagem.",
+      );
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
   }
 
   if (loading && !data) {
@@ -104,6 +129,7 @@ export function AdminSettingsView() {
         defaultDueDays: form.defaultDueDays
           ? Number(form.defaultDueDays)
           : undefined,
+        qrCodeUrl: form.qrCodeUrl || null,
       });
       notify("Configurações salvas.", "success");
       await reload();
@@ -187,6 +213,70 @@ export function AdminSettingsView() {
                 placeholder="Ex.: Nubank, Inter, Itaú…"
               />
             </Field>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>QR Code para pagamento</CardTitle>
+          <CardDescription>
+            Envie a imagem (foto/print) do QR Code Pix. Ele aparece para a
+            empresa em “Minhas cobranças” para ser lido pelo aplicativo do banco.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+            <div className="flex h-40 w-40 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted">
+              {form.qrCodeUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={form.qrCodeUrl}
+                  alt="QR Code de pagamento"
+                  className="h-full w-full object-contain"
+                />
+              ) : (
+                <span className="px-3 text-center text-xs text-muted-foreground">
+                  Nenhum QR Code enviado
+                </span>
+              )}
+            </div>
+            <div className="flex flex-col gap-2">
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => void onPickQr(e.target.files?.[0])}
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={uploading}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  {uploading ? <Spinner /> : null}
+                  {form.qrCodeUrl ? "Trocar imagem" : "Enviar imagem"}
+                </Button>
+                {form.qrCodeUrl ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="text-destructive"
+                    onClick={() =>
+                      setForm((f) => ({ ...f, qrCodeUrl: "" }))
+                    }
+                  >
+                    Remover
+                  </Button>
+                ) : null}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Use uma imagem nítida (PNG ou JPEG). A imagem é redimensionada
+                automaticamente.
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>
