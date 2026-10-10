@@ -1,110 +1,257 @@
 # Deploy em VPS (Hostinger) — Financy Pro Digital
 
-Guia passo a passo para colocar a aplicação em produção em um VPS com
+Guia passo a passo para colocar a aplicação em produção num VPS com
 **Node.js + PM2 + Nginx** e banco **PostgreSQL (Neon)**.
 
-> Requisitos: Node 20+ no VPS, domínio apontado (DNS) para o IP do VPS.
+> Requisitos: VPS com Ubuntu 22.04/24.04, acesso SSH (root ou sudo) e um
+> **domínio** apontando (registro DNS tipo **A**) para o IP do VPS.
+> O Postgres fica no Neon (externo) — **não** instale banco no VPS.
+
+Nos comandos abaixo troque `SEU_DOMINIO` (ex.: `app.suaempresa.com`) e
+`SEU_USUARIO` (usuário sudo do VPS) pelos seus valores.
 
 ---
 
-## 1. Banco de dados (Neon)
+## 0. Visão geral
 
-1. Crie um projeto no [Neon](https://neon.tech) e obtenha duas connection strings:
-   - **`DATABASE_URL`** — pooled (PgBouncer) para a aplicação em runtime;
-   - **`DIRECT_URL`** — direta (sem pooler) para migrations/seed.
-2. Guarde-as para o passo do `.env`.
+```
+Internet → Nginx (80/443, TLS) → 127.0.0.1:3000 (Next.js via PM2) → Neon (Postgres)
+```
 
-## 2. Repositório e checkout no VPS
+---
+
+## 1. DNS (no painel do seu domínio)
+
+Crie um registro **A**:
+
+| Tipo | Nome | Valor            |
+|------|------|------------------|
+| A    | app  | IP.DO.SEU.VPS    |
+
+Espere a propagação (alguns minutos) antes de emitir o certificado.
+Confira com: `nslookup SEU_DOMINIO`.
+
+---
+
+## 2. Acesso e pacotes básicos no VPS
 
 ```bash
-git clone git@github.com:<seu-usuario>/financy-pro-digital.git
+ssh SEU_USUARIO@IP.DO.SEU.VPS
+
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y curl git nginx
+```
+
+Firewall (se usar ufw):
+
+```bash
+sudo ufw allow OpenSSH
+sudo ufw allow "Nginx Full"   # libera 80 e 443
+sudo ufw enable
+```
+
+---
+
+## 3. Node.js 20 (via NodeSource)
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+node -v      # deve mostrar v20.x
+npm -v
+```
+
+---
+
+## 4. Clonar o repositório
+
+O repositório é público, então o clone é por HTTPS (não precisa de chave SSH):
+
+```bash
+cd ~
+git clone https://github.com/dilson9155/financy-pro-digital.git
 cd financy-pro-digital
 ```
 
-## 3. Variáveis de ambiente
+---
+
+## 5. Variáveis de ambiente (`.env`)
+
+O Next.js (`next start`) e o Prisma carregam o arquivo **`.env`** da raiz do
+projeto automaticamente. Crie-o:
 
 ```bash
-cp .env.example .env.production
-# edite e preencha:
-#   NODE_ENV=production
-#   DATABASE_URL  (pooled)
-#   DIRECT_URL    (direta)
-#   APP_URL=https://app.seudominio.com
-#   AUTH_SECRET   (gere: node -e "console.log(require('crypto').randomBytes(48).toString('hex'))")
-#   BACKUP_DIR=./storage/backups
-# NUNCA rode o seed com SEED_DEMO_DATA=true
+nano .env
 ```
 
-Carregue no ambiente do PM2 (veja `ecosystem.config.js`): copie para `~/.financy/.env`
-e ajuste o `env_file` ou exporte as variáveis no próprio comando de start.
+Conteúdo (troque os valores; **não** commite este arquivo):
 
-## 4. Instalar e buildar
+```dotenv
+# Banco (Neon) — use os MESMOS valores do seu .env local
+DATABASE_URL="postgresql://USUARIO:SENHA@ep-xxxx-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+DIRECT_URL="postgresql://USUARIO:SENHA@ep-xxxx.sa-east-1.aws.neon.tech/neondb?sslmode=require"
 
-```bash
-npm ci --omit=dev
-npx prisma generate
+# URL pública do app (com https, sem barra no final)
+APP_URL="https://SEU_DOMINIO"
 
-# aplicar as migrations no Neon (usa DIRECT_URL/define nas variaveis)
-export $(grep -v '^#' .env.production | xargs)   # ou: set -a; source .env.production; set +a
-npx prisma migrate deploy
+# Segredo de sessão — gere um novo e forte:
+#   node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+AUTH_SECRET="cole-aqui-o-resultado-do-comando-acima"
 
-# admin de sistema (idempotente)
-SEED_ADMIN_EMAIL=admin@seudominio.com SEED_ADMIN_PASSWORD="senha-muito-forte" npm run prisma:seed
-
-# build de producao (standalone)
-npm run build
+NEXT_PUBLIC_APP_NAME="Financy Pro Digital"
+BACKUP_DIR="./storage/backups"
 ```
 
-## 5. PM2
+Proteja o arquivo:
 
 ```bash
-npm i -g pm2
+chmod 600 .env
+```
+
+> Os valores de `DATABASE_URL`/`DIRECT_URL` são os mesmos que já estão no seu
+> `.env` local (o banco Neon já existe e já tem o admin criado).
+> **Nunca** habilite `SEED_DEMO_DATA=true` em produção.
+
+---
+
+## 6. Instalar dependências, migrar e buildar
+
+> Importante: instale **com** devDependencies (`npm ci`, sem `--omit=dev`).
+> O `next build` precisa de `typescript`, `tailwindcss`, `postcss` e do CLI do
+> `prisma`. Você pode podar depois (passo 8), se quiser.
+
+```bash
+npm ci                       # instala tudo (roda prisma generate no postinstall)
+npx prisma migrate deploy    # aplica as migrations no Neon (idempotente)
+npm run build                # build de produção (standalone)
+```
+
+Se estiver usando um banco Neon **novo/vazio**, crie o admin (idempotente):
+
+```bash
+SEED_ADMIN_EMAIL="admin@SEU_DOMINIO" SEED_ADMIN_PASSWORD="uma-senha-muito-forte" npm run prisma:seed
+```
+
+> O seed só cria o admin; dados de demonstração exigem `SEED_DEMO_DATA=true`.
+
+Crie as pastas de runtime:
+
+```bash
 mkdir -p logs storage/backups
+```
+
+---
+
+## 7. Subir com PM2
+
+```bash
+sudo npm i -g pm2
 pm2 start ecosystem.config.js --env production
 pm2 save
-pm2 startup   # siga a instrução impressa (systemd)
+pm2 startup    # copie e cole o comando que o pm2 imprimir (systemd)
 ```
 
 Verificações:
 
 ```bash
-pm2 status                 # deve mostrar "online"
-pm2 logs financy-pro-digital
-curl -I http://127.0.0.1:3000/login
+pm2 status                              # financy-pro-digital = "online"
+pm2 logs financy-pro-digital --lines 30
+curl -I http://127.0.0.1:3000/login     # deve responder HTTP/1.1 200
 ```
 
-## 6. Nginx + HTTPS (Let's Encrypt)
+---
 
-1. Instale o Nginx. Coloque `deploy/nginx.conf` em
-   `/etc/nginx/sites-available/financy-pro-digital` e ajuste `server_name`.
-2. Ative e recarregue:
-   ```bash
-   sudo ln -s /etc/nginx/sites-available/financy-pro-digital /etc/nginx/sites-enabled/
-   sudo nginx -t && sudo systemctl reload nginx
-   ```
-3. Emita o certificado:
-   ```bash
-   sudo apt install certbot python3-certbot-nginx
-   sudo certbot --nginx -d app.seudominio.com
-   ```
+## 8. (Opcional) Podar dependências de desenvolvimento
 
-## 7. Atualizações
+Depois do build, para liberar espaço:
+
+```bash
+npm prune --omit=dev
+pm2 restart financy-pro-digital
+```
+
+> Se rodar isso, o CLI do Prisma é removido — reinstale com `npm i -D prisma`
+> antes de rodar uma nova migration.
+
+---
+
+## 9. Nginx (proxy reverso)
+
+```bash
+sudo cp deploy/nginx.conf /etc/nginx/sites-available/financy-pro-digital
+sudo nano /etc/nginx/sites-available/financy-pro-digital   # ajuste server_name
+sudo ln -s /etc/nginx/sites-available/financy-pro-digital /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Teste no navegador: `http://SEU_DOMINIO` deve abrir a tela de login.
+
+---
+
+## 10. HTTPS (Let's Encrypt / certbot)
+
+O arquivo do Nginx começa só com HTTP justamente para o certbot validar o
+domínio. Depois ele adiciona o bloco 443 e o redirecionamento:
+
+```bash
+sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d SEU_DOMINIO
+```
+
+Teste a renovação automática:
+
+```bash
+sudo certbot renew --dry-run
+```
+
+Pronto: **https://SEU_DOMINIO**.
+
+---
+
+## 11. Primeiro acesso
+
+1. Abra `https://SEU_DOMINIO`.
+2. Entre com o admin (o mesmo do seu ambiente atual):
+   - e-mail: `admin@financy.local`
+   - senha: a que você definiu no seed local.
+3. **Troque a senha** em *Configurações* / *Usuários* (ou crie um usuário novo
+   com seu e-mail real e desative/pare de usar o admin genérico).
+
+---
+
+## 12. Atualizações (novos deploys)
+
+Cada vez que o código mudar no GitHub:
 
 ```bash
 cd ~/financy-pro-digital
 git pull
-npm ci --omit=dev
-npx prisma migrate deploy   # novas migrations
+npm ci                       # reinstala se mudou package.json
+npx prisma migrate deploy    # aplica migrations novas (se houver)
 npm run build
 pm2 restart financy-pro-digital
 ```
 
+---
+
 ## Segurança operacional
 
-- Altere o `AUTH_SECRET` do ambiente antes de subir para produção.
-- Rode `npm run prisma:seed` apenas com `SEED_DEMO_DATA=false` (padrão) para
-  criar o admin; **nunca** importe os dados demo para produção.
-- Backups lógicos são gravados em `BACKUP_DIR`; mova-os periodicamente para
-  armazenamento externo (o app registra a operação na tabela `backups`).
-- Ative a autenticação de dois fatores na conta Neon e limite o acesso ao VPS por
-  firewall/SSH.
+- `AUTH_SECRET` forte e **diferente** do ambiente local.
+- Nunca commite `.env` (já está no `.gitignore`).
+- Nunca rode o seed com `SEED_DEMO_DATA=true` em produção.
+- Backups lógicos vão para `BACKUP_DIR`; mova periodicamente para armazenamento
+  externo (o app registra a operação na tabela `backups`).
+- Ative 2FA na conta Neon e limite o acesso SSH ao VPS (chave + firewall).
+
+---
+
+## Troubleshooting rápido
+
+| Sintoma | Causa provável | Ação |
+|---|---|---|
+| `pm2 status` mostra *errored* | `.env` ausente/inválido | `pm2 logs financy-pro-digital`; confira `DATABASE_URL` |
+| 502 no Nginx | app não está na porta 3000 | `pm2 status`; `curl -I http://127.0.0.1:3000/login` |
+| `nginx -t` falha | directive em contexto errado | veja `deploy/nginx.conf` (rate limit fica fora do `server`) |
+| Build falha com "typescript not found" | instalou com `--omit=dev` | `npm ci` (sem `--omit=dev`) e buildar de novo |
+| Certbot não valida o domínio | DNS não propagou / porta 80 fechada | `nslookup SEU_DOMINIO`; libere 80 no firewall |

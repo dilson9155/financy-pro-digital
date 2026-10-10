@@ -1,5 +1,6 @@
 import { twMerge } from "tailwind-merge";
 import clsx, { type ClassValue } from "clsx";
+import { ResponsiveTable } from "@/components/table-responsive";
 
 export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
@@ -299,11 +300,7 @@ export function statusTone(status: string | null | undefined): BadgeTone {
 // -----------------------------------------------------------------------------
 
 export function Table({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="w-full overflow-x-auto">
-      <table className="w-full caption-bottom text-sm">{children}</table>
-    </div>
-  );
+  return <ResponsiveTable>{children}</ResponsiveTable>;
 }
 
 export function THead({ children }: { children: React.ReactNode }) {

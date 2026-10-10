@@ -7,7 +7,7 @@
   --foreground: 222 47% 11%;
   --card: 0 0% 100%;
   --card-foreground: 222 47% 11%;
-  --primary: 221 83% 53%;
+  --primary: 225 100% 13%;
   --primary-foreground: 0 0% 100%;
   --secondary: 210 40% 96%;
   --secondary-foreground: 222 47% 11%;
@@ -23,7 +23,7 @@
   --warning-foreground: 0 0% 100%;
   --border: 214 32% 91%;
   --input: 214 32% 91%;
-  --ring: 221 83% 53%;
+  --ring: 225 100% 13%;
   --radius: 0.65rem;
 }
 
@@ -61,4 +61,84 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* ---------------------------------------------------------------------------
+   Responsive tables → cards on phones.
+   The labels are generated at runtime by <ResponsiveTable> from the table
+   header cells, so every list gets the card layout without per-view changes.
+--------------------------------------------------------------------------- */
+@media (max-width: 767px) {
+  .rt-table,
+  .rt-table thead,
+  .rt-table tbody {
+    display: block;
+  }
+
+  .rt-table thead {
+    display: none;
+  }
+
+  .rt-table tbody tr {
+    display: block;
+    margin-bottom: 0.75rem;
+    padding: 0.4rem 0.9rem;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+    background-color: hsl(var(--card));
+    box-shadow: 0 1px 2px hsl(var(--foreground) / 0.05);
+  }
+
+  .rt-table tbody tr:last-child {
+    margin-bottom: 0;
+  }
+
+  .rt-table tbody tr:hover {
+    background-color: hsl(var(--card));
+  }
+
+  .rt-table tbody td {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.2rem 0.75rem;
+    min-width: 0;
+    padding: 0.45rem 0;
+    border: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+
+  .rt-table tbody td::before {
+    content: attr(data-label);
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+    text-align: left;
+  }
+
+  /* When the value is built from several blocks, stack them under the label. */
+  .rt-table tbody td:has(> * + *) {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  /* Cells without a header (e.g. row actions) take the full width. */
+  .rt-table tbody td.rt-plain {
+    justify-content: flex-end;
+  }
+
+  .rt-table tbody td.rt-plain::before {
+    content: none;
+  }
+
+  /* Respect columns that are intentionally hidden on small screens. */
+  .rt-table tbody td.hidden {
+    display: none !important;
+  }
 }

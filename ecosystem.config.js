@@ -2,12 +2,14 @@
  * Ecosystem PM2 para o Financy Pro Digital (Next.js standalone).
  *
  * Uso no VPS (Hostinger):
- *   npm ci --omit=dev
+ *   npm ci                              # COM devDependencies (o build precisa)
  *   npx prisma migrate deploy           # aplica as migrations no Neon
  *   npm run build
  *   pm2 start ecosystem.config.js --env production
  *   pm2 save && pm2 startup
  *
+ * As variaveis de ambiente de producao ficam em .env na raiz do projeto;
+ * o Next.js (`next start`) e o Prisma carregam esse arquivo automaticamente.
  * A variavel PORT e usada pelo `next start` (veja package.json).
  */
 module.exports = {
