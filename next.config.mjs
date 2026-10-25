@@ -1,7 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Build standalone: ideal para deploy em VPS (Hostinger) com PM2.
-  output: "standalone",
+  // Na Vercel o `standalone` nao e usado (a plataforma monta as funcoes
+  // serverless a partir do build padrao), entao so aplicamos fora dela.
+  output: process.env.VERCEL ? undefined : "standalone",
   reactStrictMode: true,
   poweredByHeader: false,
   // O driver do Neon e o pacote `ws` nao devem ser empacotados pelo webpack:
