@@ -12,6 +12,7 @@ const nextConfig = {
   serverExternalPackages: [
     "@prisma/adapter-neon",
     "@neondatabase/serverless",
+    "@aws-sdk/client-s3",
     "ws",
   ],
   experimental: {

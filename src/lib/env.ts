@@ -36,6 +36,16 @@ const envSchema = z.object({
   AUTH_MAX_LOGIN_ATTEMPTS: z.coerce.number().int().positive().default(5),
   AUTH_LOCK_MINUTES: z.coerce.number().int().positive().default(15),
   BACKUP_DIR: z.string().default("./storage/backups"),
+  // --- Armazenamento dos backups (S3 compativel: R2, AWS, B2...) -------------
+  /** Sem estas variaveis o backup e gravado em disco (BACKUP_DIR). */
+  S3_BUCKET: z.string().optional(),
+  S3_ENDPOINT: z.string().url().optional(),
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
+  /** Regiao do bucket. R2 usa "auto". */
+  S3_REGION: z.string().default("auto"),
+  /** Prefixo das chaves dentro do bucket. */
+  S3_PREFIX: z.string().default(""),
   // --- Recuperacao de senha (e-mail via Resend) -----------------------------
   /** Sem a chave, o link e apenas registrado no log do servidor. */
   RESEND_API_KEY: z.string().optional(),

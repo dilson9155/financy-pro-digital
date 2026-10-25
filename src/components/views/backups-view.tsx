@@ -19,6 +19,7 @@ import {
   TH,
   THead,
   TR,
+  buttonClasses,
   statusTone,
 } from "@/components/ui";
 import { BACKUP_STATUS_LABELS, formatBytes, formatDateTime } from "@/lib/format";
@@ -208,6 +209,18 @@ export function BackupsView() {
                 </div>
               ) : null}
             </div>
+
+            {detail.status === "COMPLETED" ? (
+              <div className="flex justify-end gap-2 border-t border-border pt-4">
+                <a
+                  href={`/api/backups/${detail.id}/download`}
+                  className={buttonClasses("outline", "md")}
+                  download={detail.fileName || undefined}
+                >
+                  Baixar JSON
+                </a>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </Modal>
