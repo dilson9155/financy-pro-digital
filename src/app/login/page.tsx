@@ -59,6 +59,14 @@ export default function LoginPage() {
                   placeholder="••••••••"
                 />
               </Field>
+              <p className="text-right text-sm">
+                <Link
+                  href="/recuperar-senha"
+                  className="font-medium text-primary hover:underline"
+                >
+                  Esqueci minha senha
+                </Link>
+              </p>
               {error ? (
                 <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
                   {error}

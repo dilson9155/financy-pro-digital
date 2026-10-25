@@ -215,6 +215,7 @@ model User {
 
   memberships     Membership[]
   sessions        UserSession[]
+  passwordResetTokens PasswordResetToken[]
   auditLogs       AuditLog[]
   createdTitles   FinancialTitle[]     @relation("TitleCreatedBy")
   createdSettlements Settlement[]      @relation("SettlementCreatedBy")
@@ -242,6 +243,24 @@ model UserSession {
   @@index([userId])
   @@index([expiresAt])
   @@map("user_sessions")
+}
+
+/// Token de recuperacao de senha. O token original nunca e armazenado:
+/// guardamos apenas o hash SHA-256, com validade curta e uso unico.
+model PasswordResetToken {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @db.Uuid
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  usedAt      DateTime?
+  requestedIp String?
+  createdAt   DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
 }
 
 model Role {

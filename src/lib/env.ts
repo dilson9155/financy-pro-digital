@@ -36,6 +36,16 @@ const envSchema = z.object({
   AUTH_MAX_LOGIN_ATTEMPTS: z.coerce.number().int().positive().default(5),
   AUTH_LOCK_MINUTES: z.coerce.number().int().positive().default(15),
   BACKUP_DIR: z.string().default("./storage/backups"),
+  // --- Recuperacao de senha (e-mail via Resend) -----------------------------
+  /** Sem a chave, o link e apenas registrado no log do servidor. */
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z
+    .string()
+    .default("Financy Pro Digital <no-reply@elitesistemas.io>"),
+  /** URL publica da logo usada no e-mail (opcional). */
+  EMAIL_LOGO_URL: z.string().optional(),
+  /** "true" devolve o link de redefinicao na resposta da API (apenas dev). */
+  PASSWORD_RESET_DEV_LINK: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
